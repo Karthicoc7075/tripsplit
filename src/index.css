@@ -1,0 +1,220 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode */
+    --background: 210 40% 98%;        /* #F8FAFC */
+    --foreground: 222 47% 11%;        /* #0F172A */
+
+    --card: 0 0% 100%;                /* #FFFFFF */
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --surface-input: 0 0% 100%;       /* #FFFFFF — input fields */
+    --primary: 175 75% 26%;           /* #0F766E */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;  /* #64748B */
+
+    --accent: 175 60% 95%;             /* Light pastel green */
+    --accent-foreground: 175 75% 26%;  /* Deep primary green */
+
+    --destructive: 0 84% 60%;         /* #EF4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 160 84% 39%;           /* #10B981 */
+    --success-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;            /* #E2E8F0 */
+    --input: 214 32% 91%;
+    --ring: 175 75% 26%;
+
+    --radius: 0.625rem;
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .dark {
+    /* Layered dark mode — true black + elevated surfaces */
+    --background: 0 0% 0%;            /* #000000 */
+    --foreground: 210 40% 96%;         /* #F1F5F9 */
+
+    --card: 0 0% 6%;                  /* #0F0F0F */
+    --card-foreground: 210 40% 96%;
+
+    --popover: 0 0% 6%;
+    --popover-foreground: 210 40% 96%;
+
+    --surface-input: 0 0% 10%;        /* #1A1A1A */
+    --primary: 175 75% 26%;           /* #0F766E */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 8%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 0 0% 8%;
+    --muted-foreground: 215 20% 65%;  /* #94A3B8 */
+
+    --accent: 175 50% 12%;             /* Subtle dark green */
+    --accent-foreground: 175 75% 85%;  /* Soft light green */
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 160 72% 42%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 0 0% 17%;               /* #2A2A2A */
+    --input: 0 0% 17%;
+    --ring: 175 75% 26%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  .fintech-card {
+    @apply rounded-xl border border-border/60 bg-card text-card-foreground shadow-fintech transition-all duration-200;
+  }
+
+  .fintech-card-hover {
+    @apply fintech-card hover:shadow-fintech-hover hover:-translate-y-0.5;
+  }
+
+  .fintech-stat {
+    @apply fintech-card p-5;
+  }
+
+  .fintech-table-row {
+    @apply border-b border-border/50 transition-colors hover:bg-muted/40;
+  }
+
+  .fintech-pill-owe {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-destructive/10 text-destructive;
+  }
+
+  .fintech-pill-owed {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-success/10 text-success;
+  }
+
+  .fintech-pill-settled {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-muted text-muted-foreground;
+  }
+
+  .premium-tab-trigger {
+    @apply relative px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:text-primary;
+  }
+
+  .premium-tab-trigger[data-state="active"]::after {
+    content: '';
+    @apply absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full;
+  }
+
+  .auth-page-bg {
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -10%, hsl(var(--primary) / 0.06), transparent),
+      hsl(var(--background));
+  }
+
+  .dark .auth-page-bg {
+    background:
+      radial-gradient(ellipse 60% 40% at 50% -8%, hsl(var(--primary) / 0.08), transparent),
+      hsl(var(--background));
+  }
+
+  .auth-card {
+    @apply bg-card border-border shadow-fintech-lg;
+  }
+
+  .dark .auth-card {
+    box-shadow:
+      0 0 0 1px hsl(var(--border)),
+      0 8px 32px rgb(0 0 0 / 0.45);
+  }
+
+  .auth-input {
+    @apply bg-surface-input border-border text-foreground;
+  }
+
+  .auth-input:focus {
+    @apply border-primary ring-2 ring-primary/20;
+  }
+
+  .auth-card-footer {
+    @apply border-t border-border bg-muted/40;
+  }
+
+  .dark .auth-card-footer {
+    @apply bg-secondary/50;
+  }
+}
+
+@layer utilities {
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .glow-border {
+    position: relative;
+    border-radius: inherit;
+  }
+
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from var(--border-angle), transparent 20%, hsl(var(--primary)) 80%, transparent 100%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    animation: border-spin 4s linear infinite;
+  }
+}
+
+@property --border-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0turn;
+}
+
+@keyframes border-spin {
+  to {
+    --border-angle: 1turn;
+  }
+}
