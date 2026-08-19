@@ -145,6 +145,17 @@ export default function Dashboard() {
     );
   }, [dashboardContext, activeTransactions, settlementRecords, currentUserId]);
 
+  const spentSubtitle = useMemo(() => {
+    const flow = activeOutingSpend;
+    if (!flow || !contextOuting) return null;
+
+    const parts = [`Paid ${formatCurrency(flow.paid)}`];
+    if (flow.settledIn > 0) parts.push(`back ${formatCurrency(flow.settledIn)}`);
+    if (flow.settledOut > 0) parts.push(`settled ${formatCurrency(flow.settledOut)}`);
+
+    return parts.length > 1 ? parts.join(" · ") : `In ${contextOuting.name}`;
+  }, [activeOutingSpend, contextOuting]);
+
   const monthTrend = useMemo(
     () => getMonthOverMonthTrend(activeTransactions, currentUserId),
     [activeTransactions, currentUserId]
@@ -387,19 +398,7 @@ export default function Dashboard() {
               prefix={getCurrencySymbol()}
               icon={CreditCard}
               variant="primary"
-              subtitle={
-                activeOutingSpend.settledIn > 0 || activeOutingSpend.settledOut > 0
-                  ? `Paid ${formatCurrency(activeOutingSpend.paid)}${
-                      activeOutingSpend.settledIn > 0
-                        ? ` · back ${formatCurrency(activeOutingSpend.settledIn)}`
-                        : ""
-                    }${
-                      activeOutingSpend.settledOut > 0
-                        ? ` · settled ${formatCurrency(activeOutingSpend.settledOut)}`
-                        : ""
-                    }`
-                  : `In ${contextOuting.name}`
-              }
+              subtitle={spentSubtitle ?? undefined}
               onClick={() => navigate(`/outings/${contextOuting.id}`)}
             />
           ) : (

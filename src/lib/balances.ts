@@ -205,9 +205,6 @@ export function computeFriendBalances(
       );
       if (!friend) continue;
 
-      const memberBal = balances.find((b) => b.memberId === member.id)?.balance ?? 0;
-      const userBal = balances.find((b) => b.memberId === currentUserId)?.balance ?? 0;
-
       // Net between user and friend within this outing
       const edges = simplifyDebts(balances.filter(
         (b) => b.memberId === currentUserId || b.memberId === member.id

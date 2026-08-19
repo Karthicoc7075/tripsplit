@@ -30,7 +30,6 @@ import {
   computeSplits,
   computeDashboardStats,
   computeGlobalSettlements,
-  computeMemberBalances,
   computeFriendBalances,
   getOutingTotalSpent,
   getMemberBalance,
@@ -52,7 +51,6 @@ import {
   replaceAllUserData,
   getOutingBackupRecord,
   restoreOutingFromBackupRecord,
-  deleteOutingBackupDoc,
   type AppData,
 } from "@/lib/firestore";
 import {
@@ -183,7 +181,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setRetryToken((t) => t + 1);
   }, []);
-  const [undoStack, setUndoStack] = useState<AppData[]>([]);
+  const [, setUndoStack] = useState<AppData[]>([]);
   const dataRef = useRef(data);
   dataRef.current = data;
 
@@ -427,11 +425,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const removedIds = getRemovedMemberIds(getOutingMembers(outing), members.map((m) => m.id));
 
       const outingTxs = data.transactions.filter((t) => t.outingId === outingId);
-      const newMemberIdsArr = members.map((m) => m.id);
 
-      // Bug #4: only recalculate when members are removed.
+      // Only recalculate when members are removed.
       // Persistence + member sync is handled by updateOuting().
       if (removedIds.length > 0) {
+        // Snapshot before rewriting every split, so this is recoverable.
+        pushUndo(data);
+
         for (const t of outingTxs) {
           recalculatedCount++;
           const newSplits = computeSplits(t.amount, members, "equally");
@@ -510,7 +510,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 
   const addFriend = useCallback(
-    async (friendId: string, email: string, name: string, _phone?: string) => {
+    async (friendId: string, email: string, _name: string, _phone?: string) => {
       if (!currentUserId) return false;
       if (friendId === currentUserId) return false;
 

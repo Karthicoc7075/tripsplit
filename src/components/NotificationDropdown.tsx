@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -20,14 +19,19 @@ import { cn } from "@/lib/utils";
 
 export function NotificationDropdown() {
   const navigate = useNavigate();
-  const { transactions, outings, friends, currentUserId, currentUserName } = useData();
+  const {
+    transactions, outings, friends, currentUserId, currentUserName, settlementRecords,
+  } = useData();
   const [open, setOpen] = useState(false);
   const [seenVersion, setSeenVersion] = useState(0);
   const [clearedVersion, setClearedVersion] = useState(0);
 
   const notifications = useMemo(
-    () => buildNotificationHistory(transactions, outings, friends, currentUserId, currentUserName),
-    [transactions, outings, friends, currentUserId, currentUserName]
+    () =>
+      buildNotificationHistory(
+        transactions, outings, friends, currentUserId, currentUserName, 20, settlementRecords
+      ),
+    [transactions, outings, friends, currentUserId, currentUserName, settlementRecords]
   );
 
   const clearedTime = useMemo(() => {

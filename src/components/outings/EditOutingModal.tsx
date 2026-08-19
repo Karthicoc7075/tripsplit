@@ -5,7 +5,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -19,7 +18,6 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { OUTING_CATEGORIES, OUTING_CATEGORY_LABELS, type Friend, type Outing, type OutingMember, type Transaction } from "@/types";
 import {
   buildMembersList,
-  getAddedMemberIds,
   getOutingMembers,
   getRemovedMemberIds,
   getTransactionsNeedingReview,
@@ -109,7 +107,6 @@ export function EditOutingModal({
   );
 
   const removedIds = getRemovedMemberIds(outingMembers, memberIds);
-  const addedIds = getAddedMemberIds(outingMembers, memberIds);
   const hasMemberChanges = membersChanged(outingMembers, memberIds);
   const txsNeedingReview = getTransactionsNeedingReview(transactions, removedIds);
 

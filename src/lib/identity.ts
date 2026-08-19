@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   UtensilsCrossed, Car, BedDouble, Clapperboard, ShoppingBag, Ticket,
   ParkingCircle, Gift, Stethoscope, Camera, Receipt,
-  Plane, Landmark, Film, MapPin,
+  Plane, Landmark, Film,
   CupSoda, Cake, HandCoins, Flame, Flower2, Footprints,
   Fuel, CarFront, Cookie, Percent, FerrisWheel, Compass, Tag,
 } from "lucide-react";

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Camera, X, ImageIcon, Loader2 } from "lucide-react";
+import { Camera, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { compressImage, formatBytes } from "@/lib/image";
@@ -135,14 +135,5 @@ export function ReceiptThumbnail({ url, onClick }: { url: string; onClick?: () =
     >
       <img src={url} alt="Receipt" className="h-full w-full object-cover" />
     </button>
-  );
-}
-
-export function ReceiptPreview({ url }: { url: string }) {
-  return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-      <ImageIcon className="h-3.5 w-3.5" />
-      <span>Receipt attached</span>
-    </div>
   );
 }

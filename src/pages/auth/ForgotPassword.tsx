@@ -9,7 +9,6 @@ import {
 } from "@/lib/authErrors";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AuthPageShell } from "@/components/auth/AuthPageShell";
 import { AuthBrandHeader } from "@/components/auth/AuthBrandHeader";

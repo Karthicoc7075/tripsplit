@@ -1,4 +1,3 @@
-import { formatCurrency } from "@/lib/format";
 import type { FriendsOverallSummary } from "@/lib/friends";
 import { formatPersonOwes, formatPersonIsOwed } from "@/lib/displayNames";
 import { cn } from "@/lib/utils";

@@ -1,6 +1,7 @@
-import type { Transaction, Outing, Friend } from "@/types";
+import type { Transaction, Outing, Friend, SettlementRecord } from "@/types";
 import { formatRelativeTime, formatCurrency } from "@/lib/format";
 import { getOutingMemberIds, getOutingMembers } from "@/lib/members";
+import { getFirstName } from "@/lib/displayNames";
 import { getOutingStatusLabel } from "@/lib/outing";
 
 export interface NotificationItem {
@@ -102,16 +103,55 @@ function buildFriendNotifications(
     }));
 }
 
+/**
+ * Being paid back is the most reassuring thing that can happen in an expense
+ * app, and it produced no notification at all — the dropdown only ever showed
+ * expenses, invites and new friends.
+ */
+function buildSettlementNotifications(
+  records: SettlementRecord[],
+  outings: Outing[],
+  currentUserId: string
+): NotificationItem[] {
+  const outingMap = new Map(outings.map((o) => [o.id, o]));
+
+  return records
+    .filter(
+      (r) =>
+        outingMap.has(r.outingId) &&
+        (r.fromId === currentUserId || r.toId === currentUserId)
+    )
+    .map((r) => {
+      const outing = outingMap.get(r.outingId);
+      const outingLabel = outing ? ` in ${outing.name}` : "";
+      const received = r.toId === currentUserId;
+      const other = getFirstName(received ? r.fromName : r.toName);
+
+      return {
+        id: `settlement-${r.id}`,
+        title: received ? "You were paid back" : "Payment recorded",
+        message: received
+          ? `${other} paid you ${formatCurrency(r.amount)}${outingLabel}`
+          : `You paid ${other} ${formatCurrency(r.amount)}${outingLabel}`,
+        time: "",
+        createdAt: r.createdAt,
+        path: `/outings/${r.outingId}`,
+      };
+    });
+}
+
 export function buildNotificationHistory(
   transactions: Transaction[],
   outings: Outing[],
   friends: Friend[],
   currentUserId: string,
   _currentUserName: string,
-  limit = 20
+  limit = 20,
+  settlementRecords: SettlementRecord[] = []
 ): NotificationItem[] {
   const items = [
     ...buildExpenseNotifications(transactions, outings, currentUserId),
+    ...buildSettlementNotifications(settlementRecords, outings, currentUserId),
     ...buildOutingInviteNotifications(outings, currentUserId),
     ...buildFriendNotifications(friends, currentUserId),
   ];

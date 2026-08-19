@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatCurrency } from "@/lib/format";
 import type { Transaction, OutingMember } from "@/types";
 import { memberLabel } from "@/lib/displayNames";
@@ -69,7 +68,7 @@ export function YourPaidDetailModal({
             </div>
           ) : (
             <div className="space-y-3">
-              {transactions.map((tx, idx) => {
+              {transactions.map((tx) => {
                 const isExpanded = expandedTxId === tx.id;
                 const formattedDate = new Date(tx.date).toLocaleDateString("en-IN", {
                   day: "numeric",
