@@ -55,7 +55,21 @@ export function BottomSheet({
                 </Button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 pb-12">{children}</div>
+            {/* pb-12 used to add 48px of dead space after the content, so a
+                form with a sticky action bar could be scrolled past the
+                buttons into empty background. Children that need extra room
+                at the bottom now supply it themselves. */}
+            <div
+              className="flex-1 overflow-y-auto overscroll-contain p-4"
+              // Protects sheets whose last element is not a sticky bar — the
+              // transaction and member detail panels end in buttons that would
+              // otherwise sit under the home indicator. A sticky footer is
+              // positioned against the padding box, so it carries its own
+              // safe-area padding instead.
+              style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+            >
+              {children}
+            </div>
           </motion.div>
         </>
       )}

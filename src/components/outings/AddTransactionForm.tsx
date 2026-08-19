@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Users, AlertCircle } from "lucide-react";
+import { Users, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -403,17 +403,43 @@ export function AddTransactionForm({
         </div>
       </div>
 
-      <div className="flex gap-2 pt-2 sticky bottom-0 bg-background">
-        <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
+      {/* Sticky action bar.
+          - border-t: the form scrolls underneath, and without a divider the
+            fields bled into the buttons on a phone.
+          - h-11: the default h-9 is 36px, below the 44px minimum tap target.
+          - safe-area padding: on notched iPhones the buttons sat under the
+            home indicator.
+          - Save gets twice the width: it is the primary action and carries a
+            far longer label than "Cancel". */}
+      <div
+        className="sticky bottom-0 z-10 -mx-1 flex gap-2 border-t border-border/60 bg-background px-1 pt-3 shadow-[0_-10px_16px_-12px_rgba(0,0,0,0.35)]"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 flex-1"
+          onClick={onCancel}
+          disabled={submitting}
+        >
           Cancel
         </Button>
-        <motion.div className="flex-1" whileTap={{ scale: 0.98 }}>
+        <motion.div className="flex-[2]" whileTap={{ scale: 0.98 }}>
           <Button
             type="submit"
-            className="w-full"
+            className="h-11 w-full"
             disabled={!title.trim() || !totalAmount || paymentsMismatch || submitting}
           >
-            {submitting ? "Saving..." : editingTx ? "Update Transaction" : "Save Transaction"}
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving…
+              </>
+            ) : editingTx ? (
+              "Update Transaction"
+            ) : (
+              "Save Transaction"
+            )}
           </Button>
         </motion.div>
       </div>
