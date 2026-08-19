@@ -1,101 +1,192 @@
 rules_version = '2';
+
+// TripSplit security rules.
+//
+// The client enforces permissions in src/lib/permissions.ts, but that is only
+// a UI convenience — anyone can call the SDK directly. These rules are the
+// only real boundary, so anything the app treats as a permission is repeated
+// here.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Check if user is authenticated
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Check if the authenticated user is the owner of the document
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // Membership is carried on every shared document as `memberIds`, which is
+    // also what the app's array-contains queries filter on.
+    function isMemberOf(data) {
+      return isAuthenticated() && uid() in data.memberIds;
+    }
+
+    // Deleting another member's transaction is allowed only for the owner of
+    // the outing it belongs to. Guarded by exists() so a missing outing denies
+    // rather than errors — and the client deletes children before the parent
+    // so this lookup still resolves during an outing delete.
+    function ownsOuting(outingId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/outings/$(outingId))
+        && get(/databases/$(database)/documents/outings/$(outingId)).data.createdById == uid();
+    }
+
+    function unchanged(field) {
+      return !(field in request.resource.data)
+        || !(field in resource.data)
+        || request.resource.data[field] == resource.data[field];
+    }
+
     // ─── Users ─────────────────────────────────────────────────────────────
+    // `get` stays open to signed-in users: resolving a friend's profile by uid
+    // is required for every friends list and member label.
+    //
+    // `list` is what backs friend search. Rules cannot require a specific
+    // where() clause, so this caps how much a single query can return rather
+    // than preventing enumeration outright. Moving search behind a Cloud
+    // Function, or splitting public fields into their own collection, is the
+    // real fix — this only limits the blast radius.
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isOwner(userId);
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated() && request.query.limit <= 25;
+
+      allow create: if isOwner(userId)
+        && request.resource.data.email is string
+        && request.resource.data.name is string;
+
+      allow update: if isOwner(userId)
+        && request.resource.data.email == resource.data.email;
+
+      allow delete: if isOwner(userId);
     }
 
     // ─── Friendships ───────────────────────────────────────────────────────
     match /friendships/{friendshipId} {
-      allow read, delete: if isAuthenticated() && (
-        request.auth.uid == resource.data.user1 || 
-        request.auth.uid == resource.data.user2 ||
-        request.auth.uid == resource.data.addedBy
-      );
-      
-      allow create: if isAuthenticated() && (
-        request.auth.uid == request.resource.data.user1 ||
-        request.auth.uid == request.resource.data.user2 ||
-        request.auth.uid == request.resource.data.addedBy
-      );
+      function isParticipant(data) {
+        return isAuthenticated() && (uid() == data.user1 || uid() == data.user2);
+      }
 
-      allow update: if isAuthenticated() && (
-        request.auth.uid == resource.data.user1 || 
-        request.auth.uid == resource.data.user2 ||
-        request.auth.uid == resource.data.addedBy
-      ) && (
-        request.auth.uid == request.resource.data.user1 ||
-        request.auth.uid == request.resource.data.user2 ||
-        request.auth.uid == request.resource.data.addedBy
-      );
+      allow read, delete: if isParticipant(resource.data);
+
+      // addedBy must be the caller — you cannot forge a friendship on someone
+      // else's behalf.
+      allow create: if isParticipant(request.resource.data)
+        && request.resource.data.addedBy == uid();
+
+      allow update: if isParticipant(resource.data)
+        && isParticipant(request.resource.data)
+        && unchanged('user1')
+        && unchanged('user2');
     }
 
     // ─── Outings ───────────────────────────────────────────────────────────
     match /outings/{outingId} {
-      allow read, delete: if isAuthenticated() && (
-        request.auth.uid in resource.data.memberIds
-      );
-      
-      allow create: if isAuthenticated() && (
-        request.auth.uid in request.resource.data.memberIds
-      );
+      allow read: if isMemberOf(resource.data);
 
-      allow update: if isAuthenticated() && (
-        request.auth.uid in resource.data.memberIds &&
-        request.auth.uid in request.resource.data.memberIds
+      // createdById must name a member, but need not be the caller: restoring a
+      // backup legitimately re-creates an outing someone else made. Claiming
+      // ownership of an *existing* outing is blocked by unchanged() on update.
+      allow create: if isMemberOf(request.resource.data)
+        && request.resource.data.createdById in request.resource.data.memberIds
+        && request.resource.data.name is string
+        && request.resource.data.memberIds is list;
+
+      // Members may edit the outing and its member list — including removing
+      // themselves, which is how "leave outing" works, so the new memberIds is
+      // deliberately not required to contain the caller. Ownership is fixed.
+      allow update: if isMemberOf(resource.data)
+        && request.resource.data.memberIds is list
+        && unchanged('createdById');
+
+      // Only the creator can delete. The app already says so; previously any
+      // member could wipe a shared trip by calling the SDK directly.
+      //
+      // Outings written before createdById existed fall back to "any member",
+      // matching getOutingCreatorId() — without this they could never be
+      // deleted by anyone.
+      allow delete: if isAuthenticated() && (
+        (!('createdById' in resource.data) && isMemberOf(resource.data))
+        || resource.data.createdById == uid()
       );
     }
 
     // ─── Transactions ──────────────────────────────────────────────────────
     match /transactions/{transactionId} {
-      allow read, delete: if isAuthenticated() && (
-        request.auth.uid in resource.data.memberIds
-      );
+      allow read: if isMemberOf(resource.data);
 
-      allow create: if isAuthenticated() && (
-        request.auth.uid in request.resource.data.memberIds
-      );
+      allow create: if isMemberOf(request.resource.data)
+        && request.resource.data.outingId is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount >= 0
+        && request.resource.data.splits is list;
 
-      allow update: if isAuthenticated() && (
-        request.auth.uid in resource.data.memberIds &&
-        request.auth.uid in request.resource.data.memberIds
-      );
+      // Mirrors canUserEditTransaction(): any member may edit any expense.
+      // Shared costs get mistyped, and whoever notices should be able to fix
+      // it — removing a member also re-splits every transaction in the outing.
+      allow update: if isMemberOf(resource.data)
+        && isMemberOf(request.resource.data)
+        && unchanged('outingId')
+        && unchanged('createdById')
+        && request.resource.data.amount is number
+        && request.resource.data.amount >= 0;
+
+      // Mirrors canUserDeleteTransaction(): the person who logged it, or the
+      // owner of the outing. A member may fix anyone's expense, but may not
+      // remove one they did not add.
+      allow delete: if isMemberOf(resource.data)
+        && (resource.data.createdById == uid() || ownsOuting(resource.data.outingId));
     }
 
     // ─── Settlement Records ────────────────────────────────────────────────
     match /settlementRecords/{recordId} {
-      allow read, delete: if isAuthenticated() && (
-        request.auth.uid in resource.data.memberIds
-      );
+      allow read: if isMemberOf(resource.data);
 
-      allow create: if isAuthenticated() && (
-        request.auth.uid in request.resource.data.memberIds
-      );
+      // Normally you may only record a payment you are part of. The outing's
+      // owner is also allowed, because restoring a backup re-creates
+      // settlements between other members — and an owner can already delete
+      // and re-add anything inside their own outing.
+      allow create: if isMemberOf(request.resource.data)
+        && request.resource.data.outingId is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && (
+          (request.resource.data.fromId == uid() || request.resource.data.toId == uid())
+            && request.resource.data.recordedById == uid()
+          || ownsOuting(request.resource.data.outingId)
+        );
 
-      allow update: if isAuthenticated() && (
-        request.auth.uid in resource.data.memberIds &&
-        request.auth.uid in request.resource.data.memberIds
-      );
+      // A recorded payment is a receipt. The money and the two parties are
+      // immutable — correct a mistake by deleting and re-adding. The narrow
+      // allowance exists because Undo re-writes an unchanged snapshot over
+      // records that still exist, which is a set() and therefore an update.
+      allow update: if isMemberOf(resource.data)
+        && resource.data.recordedById == uid()
+        && unchanged('outingId')
+        && unchanged('fromId')
+        && unchanged('toId')
+        && unchanged('amount')
+        && unchanged('type');
+
+      allow delete: if isMemberOf(resource.data)
+        && (resource.data.recordedById == uid() || ownsOuting(resource.data.outingId));
     }
 
     // ─── Backups ───────────────────────────────────────────────────────────
+    // Private to their owner — nobody else may read another user's snapshot.
     match /backups/{backupId} {
-      allow read, delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
-      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId;
+      allow read, delete: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId)
+        && isOwner(request.resource.data.userId);
     }
+
+    // Anything not matched above is denied.
   }
 }

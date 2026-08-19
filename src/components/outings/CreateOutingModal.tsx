@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from "@/lib/format";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Check, Info, Plus, Search } from "lucide-react";
@@ -167,10 +168,11 @@ export function CreateOutingModal({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="budget">Budget (₹)</Label>
+        <Label htmlFor="budget">Budget ({getCurrencySymbol()})</Label>
         <Input
           id="budget"
           type="number"
+            inputMode="decimal"
           min="0"
           placeholder="Optional budget cap"
           value={budget}
@@ -237,8 +239,7 @@ export function CreateOutingModal({
                   )}
                 >
                   <Avatar className="h-8 w-8">
-                    <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                      {friend.name.charAt(0)}
+                    <AvatarFallback seed={friend.id} className="text-xs bg-primary/10 text-primary">{friend.name.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">

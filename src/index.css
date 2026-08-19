@@ -218,3 +218,36 @@
     --border-angle: 1turn;
   }
 }
+/* ── Print / PDF ────────────────────────────────────────────────────────────
+   Turns any Reports view into a shareable hand-out: chrome and controls drop
+   out, cards stop breaking across pages, colours flatten to ink.            */
+@media print {
+  header,
+  nav,
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .fintech-card,
+  .fintech-card-hover {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #d4d4d8 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+
+  [data-print-block] {
+    display: block !important;
+  }
+}

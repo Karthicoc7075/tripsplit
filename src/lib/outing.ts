@@ -1,5 +1,6 @@
-import type { Outing } from "@/types";
+import type { Outing, SettlementRecord, Transaction } from "@/types";
 import { getOutingMemberIds, getOutingMembers } from "@/lib/members";
+import { parseLocalDate } from "@/lib/format";
 
 export type OutingFilter = "all" | "ongoing" | "settled" | "planned";
 export type OutingSort = "newest" | "spent" | "name";
@@ -57,20 +58,20 @@ export function deriveOutingStatus(
 
   const today = startOfDay(new Date());
 
-  if (startDate) {
-    const start = startOfDay(new Date(startDate));
-    if (!Number.isNaN(start.getTime())) {
-      if (today < start) {
-        return "planned";
-      }
-      if (endDate) {
-        const end = startOfDay(new Date(endDate));
-        if (!Number.isNaN(end.getTime()) && today >= start && today <= end) {
-          return "ongoing";
-        }
-      }
-      return "ongoing";
+  const parsedStart = parseLocalDate(startDate);
+  if (parsedStart) {
+    const start = startOfDay(parsedStart);
+    if (today < start) {
+      return "planned";
     }
+    const parsedEnd = parseLocalDate(endDate);
+    if (parsedEnd) {
+      const end = startOfDay(parsedEnd);
+      if (today >= start && today <= end) {
+        return "ongoing";
+      }
+    }
+    return "ongoing";
   }
   return "ongoing";
 }
@@ -122,10 +123,38 @@ export function filterOutings(
   });
 }
 
-export function getMemberPaidAndShare(
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Every money figure for one member, from one place, so each card can pick the
+ * one it means instead of re-deriving it:
+ *
+ *   paid      — money fronted as the payer of a transaction
+ *   share     — what the outing actually cost this member
+ *   settledIn — settlement money received from others
+ *   settledOut— settlement money sent to others
+ *   cashOut   — real money out of pocket (paid + settledOut − settledIn);
+ *               converges to `share` once everyone has settled
+ *   net       — paid − share + settledOut − settledIn.
+ *               Positive = others owe them; negative = they owe others.
+ *               Matches computeMemberBalances() in lib/balances.ts.
+ */
+export interface MemberCashFlow {
+  paid: number;
+  share: number;
+  settledIn: number;
+  settledOut: number;
+  cashOut: number;
+  net: number;
+}
+
+export function getMemberCashFlow(
   memberId: string,
-  transactions: import("@/types").Transaction[]
-): { paid: number; share: number } {
+  transactions: Transaction[],
+  settlementRecords: SettlementRecord[] = []
+): MemberCashFlow {
   let paid = 0;
   let share = 0;
 
@@ -142,8 +171,28 @@ export function getMemberPaidAndShare(
     if (split) share += split.amount;
   }
 
+  let settledIn = 0;
+  let settledOut = 0;
+
+  for (const record of settlementRecords) {
+    if (record.fromId === memberId) settledOut += record.amount;
+    if (record.toId === memberId) settledIn += record.amount;
+  }
+
   return {
-    paid: Math.round(paid * 100) / 100,
-    share: Math.round(share * 100) / 100,
+    paid: roundMoney(paid),
+    share: roundMoney(share),
+    settledIn: roundMoney(settledIn),
+    settledOut: roundMoney(settledOut),
+    cashOut: roundMoney(paid + settledOut - settledIn),
+    net: roundMoney(paid - share + settledOut - settledIn),
   };
+}
+
+export function getMemberPaidAndShare(
+  memberId: string,
+  transactions: Transaction[]
+): { paid: number; share: number } {
+  const { paid, share } = getMemberCashFlow(memberId, transactions);
+  return { paid, share };
 }

@@ -9,6 +9,7 @@ import { getOutingMembers } from "@/lib/members";
 import { TRANSACTION_CATEGORIES, type Outing, type Transaction, type TransactionPayment } from "@/types";
 import { cn } from "@/lib/utils";
 import { useData } from "@/context/DataContext";
+import { toLocalDateInput, formatCurrency, getCurrencySymbol } from "@/lib/format";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 
@@ -34,7 +35,7 @@ interface AddTransactionFormProps {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalDateInput();
 }
 
 export function AddTransactionForm({
@@ -50,7 +51,7 @@ export function AddTransactionForm({
   const [category, setCategory] = useState(editingTx?.category ?? "Food");
   const [date, setDate] = useState(
     editingTx?.date
-      ? new Date(editingTx.createdAt).toISOString().slice(0, 10)
+      ? toLocalDateInput(new Date(editingTx.createdAt))
       : todayIso()
   );
   const [payerMode, setPayerMode] = useState<"alone" | "multiple">(
@@ -193,9 +194,10 @@ export function AddTransactionForm({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label>Amount (₹) <span className="text-destructive">*</span></Label>
+          <Label>Amount ({getCurrencySymbol()}) <span className="text-destructive">*</span></Label>
           <Input
             type="number"
+            inputMode="decimal"
             min="0"
             step="0.01"
             placeholder="0"
@@ -340,9 +342,10 @@ export function AddTransactionForm({
                   {selected && (
                     <Input
                       type="number"
+            inputMode="decimal"
                       min="0"
                       className="h-9 w-28 text-right"
-                      placeholder="₹0"
+                      placeholder={`${getCurrencySymbol()}0`}
                       value={payerAmounts[m.id] ?? ""}
                       onChange={(e) =>
                         setPayerAmounts({ ...payerAmounts, [m.id]: e.target.value })
@@ -358,12 +361,12 @@ export function AddTransactionForm({
                 <div>
                   <p className="font-medium">Paid amounts must equal total transaction amount.</p>
                   <p className="text-xs mt-1 opacity-90">
-                    Current total: ₹{paymentsSum.toLocaleString("en-IN")} · Expected: ₹{totalAmount.toLocaleString("en-IN")}
+                    Current total: {formatCurrency(paymentsSum)} · Expected: {formatCurrency(totalAmount)}
                   </p>
                   <p className="text-xs mt-0.5 font-semibold">
                     {paymentRemaining > 0
-                      ? `Remaining to add: ₹${paymentRemaining.toLocaleString("en-IN")}`
-                      : `Over by: ₹${Math.abs(paymentRemaining).toLocaleString("en-IN")}`}
+                      ? `Remaining to add: ${formatCurrency(paymentRemaining)}`
+                      : `Over by: ${formatCurrency(Math.abs(paymentRemaining))}`}
                   </p>
                 </div>
               </div>
@@ -393,7 +396,7 @@ export function AddTransactionForm({
                 <span className="text-sm text-foreground">{m.id === currentUserId ? "You" : m.name}</span>
               </div>
               <span className="text-sm font-medium text-muted-foreground">
-                {totalAmount ? `₹${equalShare.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
+                {totalAmount ? formatCurrency(equalShare) : "—"}
               </span>
             </div>
           ))}

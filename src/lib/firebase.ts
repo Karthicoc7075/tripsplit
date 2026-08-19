@@ -1,6 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,5 +19,15 @@ const isFirebaseConfigured = !!import.meta.env.VITE_FIREBASE_API_KEY;
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+/**
+ * Persistent cache, not the default memory one.
+ *
+ * This is a trip app — it gets used where there is no signal. With IndexedDB
+ * persistence the app opens with real data offline, and writes are queued and
+ * flushed when the connection returns. Multi-tab manager keeps two open tabs
+ * from fighting over the same cache.
+ */
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 export { isFirebaseConfigured };

@@ -14,6 +14,7 @@ import {
 } from "@/lib/friends";
 import type { SettlementStatementType } from "@/types";
 import { formatCurrency } from "@/lib/format";
+import { getFirstName, formatPayTo, formatReturnFrom } from "@/lib/displayNames";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -49,17 +50,22 @@ function KpiCard({
   label,
   value,
   variant,
+  hint,
+  className,
 }: {
   label: string;
   value: string;
   variant: "success" | "destructive" | "default";
+  hint?: string;
+  className?: string;
 }) {
   return (
     <div
       className={cn(
         "fintech-card p-3 sm:p-4 text-center",
         variant === "success" && "border-success/30 bg-success/5",
-        variant === "destructive" && "border-destructive/30 bg-destructive/5"
+        variant === "destructive" && "border-destructive/30 bg-destructive/5",
+        className
       )}
     >
       <p className="text-[10px] sm:text-xs text-muted-foreground mb-1 leading-tight">{label}</p>
@@ -73,6 +79,18 @@ function KpiCard({
       >
         {value}
       </p>
+      {hint && (
+        <p
+          className={cn(
+            "text-[10px] sm:text-xs mt-1 leading-tight",
+            variant === "success" && "text-success/80",
+            variant === "destructive" && "text-destructive/80",
+            variant === "default" && "text-muted-foreground"
+          )}
+        >
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -138,8 +156,12 @@ export default function FriendDetail() {
   const lastOuting = getLastOutingWithFriend(friend, outings, currentUserId);
   const activeOutingCount = getActiveOutingCountWithFriend(friend, outings, currentUserId);
 
-  const returnAmount = balance > 0 ? balance : 0;
-  const settleAmount = balance < 0 ? Math.abs(balance) : 0;
+  // One two-directional number, so it carries the neutral name and states the
+  // direction underneath — same rule as the Dashboard and Outing Detail cards.
+  // The old pair of cards left one of them stuck at ₹0 at all times.
+  const isNetPositive = balance > 0.01;
+  const isNetNegative = balance < -0.01;
+  const friendFirstName = getFirstName(friend.name);
 
   const handleRemove = () => {
     removeFriend(friend.id);
@@ -191,8 +213,7 @@ export default function FriendDetail() {
 
       <div className="flex items-start gap-3">
         <Avatar className="h-14 w-14 border border-border/60 shrink-0">
-          <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
-            {friend.name.charAt(0)}
+          <AvatarFallback seed={friend.id} className="bg-primary/10 text-primary text-lg font-medium">{friend.name.charAt(0)}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
@@ -214,14 +235,21 @@ export default function FriendDetail() {
 
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <KpiCard
-          label="Return Amount"
-          value={formatCurrency(returnAmount)}
-          variant="success"
-        />
-        <KpiCard
-          label="Settle Amount"
-          value={formatCurrency(settleAmount)}
-          variant="destructive"
+          className="col-span-2"
+          label="Net Balance"
+          value={
+            isNetNegative
+              ? `-${formatCurrency(Math.abs(balance))}`
+              : formatCurrency(Math.abs(balance))
+          }
+          variant={isNetNegative ? "destructive" : isNetPositive ? "success" : "default"}
+          hint={
+            isNetNegative
+              ? formatPayTo(Math.abs(balance), friendFirstName)
+              : isNetPositive
+                ? formatReturnFrom(balance, friendFirstName)
+                : "All settled"
+          }
         />
         <KpiCard label="Outing Count" value={String(outingCount)} variant="default" />
       </div>
@@ -252,7 +280,7 @@ export default function FriendDetail() {
                   >
                     <p className="font-medium text-foreground">{outing.name}</p>
                     <div className="flex items-center justify-between gap-2 text-sm">
-                      <span className="text-muted-foreground">Your Balance:</span>
+                      <span className="text-muted-foreground">Net Balance:</span>
                       <span
                         className={cn(
                           "font-semibold",
@@ -350,6 +378,7 @@ export default function FriendDetail() {
                   <label className="text-sm font-medium text-muted-foreground">Amount (₹)</label>
                   <Input
                     type="number"
+            inputMode="decimal"
                     min="0.01"
                     step="0.01"
                     className="text-lg font-semibold bg-surface-input"
@@ -441,6 +470,7 @@ export default function FriendDetail() {
                     <label className="text-sm font-medium text-muted-foreground">Amount (₹)</label>
                     <Input
                       type="number"
+            inputMode="decimal"
                       min="0.01"
                       step="0.01"
                       className="text-lg font-semibold bg-surface-input"

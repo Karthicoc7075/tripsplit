@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
-import { Camera, X, ImageIcon } from "lucide-react";
+import { Camera, X, ImageIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { compressImage, formatBytes } from "@/lib/image";
 
 interface ReceiptUploadProps {
   value?: string;
@@ -9,14 +10,18 @@ interface ReceiptUploadProps {
   className?: string;
 }
 
-const MAX_SIZE_MB = 5;
+const MAX_SIZE_MB = 20;
 
 export function ReceiptUpload({ value, onChange, className }: ReceiptUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [savedSize, setSavedSize] = useState<string | null>(null);
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setError(null);
+    setSavedSize(null);
+
     if (!file.type.startsWith("image/")) {
       setError("Please upload an image file");
       return;
@@ -26,11 +31,23 @@ export function ReceiptUpload({ value, onChange, className }: ReceiptUploadProps
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      onChange(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    // The raw file used to go straight into the transaction document, so a
+    // normal phone photo blew Firestore's 1MB limit and the write failed
+    // silently. Shrink it first — this is also what keeps receipts working
+    // offline, since the image queues with the expense instead of needing an
+    // upload that offline persistence does not cover.
+    setBusy(true);
+    try {
+      const result = await compressImage(file);
+      onChange(result.dataUrl);
+      setSavedSize(
+        `${formatBytes(result.originalBytes)} → ${formatBytes(result.bytes)}`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not process that image");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -41,8 +58,13 @@ export function ReceiptUpload({ value, onChange, className }: ReceiptUploadProps
 
   if (value) {
     return (
-      <div className={cn("relative rounded-lg overflow-hidden border", className)}>
-        <img src={value} alt="Receipt" className="w-full h-40 object-cover" />
+      <div className={cn("relative overflow-hidden rounded-lg border", className)}>
+        <img src={value} alt="Receipt" className="h-40 w-full object-cover" />
+        {savedSize && (
+          <span className="absolute bottom-2 left-2 rounded-md bg-background/85 px-2 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur">
+            Optimised {savedSize}
+          </span>
+        )}
         <Button
           type="button"
           variant="destructive"
@@ -61,19 +83,31 @@ export function ReceiptUpload({ value, onChange, className }: ReceiptUploadProps
       <div
         role="button"
         tabIndex={0}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => !busy && inputRef.current?.click()}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
-        className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+        aria-busy={busy}
+        className={cn(
+          "rounded-lg border-2 border-dashed p-6 text-center transition-colors",
+          busy ? "cursor-wait opacity-70" : "cursor-pointer hover:border-primary/50 hover:bg-muted/30"
+        )}
       >
         <div className="flex flex-col items-center gap-2">
-          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <Camera className="h-5 w-5 text-primary" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+            {busy ? (
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            ) : (
+              <Camera className="h-5 w-5 text-primary" />
+            )}
           </div>
-          <p className="text-sm font-medium">Attach receipt photo</p>
+          <p className="text-sm font-medium">
+            {busy ? "Optimising photo…" : "Attach receipt photo"}
+          </p>
           <p className="text-xs text-muted-foreground">
-            Drag & drop or click to upload (max {MAX_SIZE_MB}MB)
+            {busy
+              ? "Shrinking it so it saves offline too"
+              : `Drag & drop or click to upload (max ${MAX_SIZE_MB}MB)`}
           </p>
         </div>
         <input

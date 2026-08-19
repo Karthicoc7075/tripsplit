@@ -11,6 +11,7 @@ import { FriendsSummaryBar } from "@/components/friends/FriendsSummaryBar";
 import { FriendCard } from "@/components/friends/FriendCard";
 import { AddFriendModal } from "@/components/friends/AddFriendModal";
 import { getFriendsOverallSummary, sortFriends } from "@/lib/friends";
+import { DataErrorState } from "@/components/DataErrorState";
 
 export default function Friends() {
   const navigate = useNavigate();
@@ -22,6 +23,8 @@ export default function Friends() {
     currentUserId,
     currentUserName,
     addFriend,
+    error,
+    retry,
   } = useData();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,6 +49,17 @@ export default function Friends() {
 
   const handleAddFriend = (id: string, email: string, name: string, phone?: string) =>
     addFriend(id, email, name, phone);
+
+  if (error) {
+    return (
+      <div className="space-y-6 pb-6">
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+          Friends
+        </h1>
+        <DataErrorState message={error} onRetry={retry} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-5 pb-6 min-w-0">

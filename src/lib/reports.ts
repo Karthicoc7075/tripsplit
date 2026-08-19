@@ -1,6 +1,6 @@
 import type { Transaction, Outing, Friend } from "@/types";
 import { getMemberPaidAndShare } from "@/lib/outing";
-import { getCategoryBreakdown, getSpendingTrend } from "@/lib/dashboard";
+import { getCategoryBreakdown, getSpendingTrend, getTransactionDate } from "@/lib/dashboard";
 import { roundMoney } from "@/lib/format";
 
 export type ReportPeriod = "3m" | "6m" | "12m" | "all";
@@ -23,7 +23,9 @@ export function filterTransactionsByPeriod(
 ): Transaction[] {
   const start = getPeriodStart(period);
   if (!start) return transactions;
-  return transactions.filter((t) => new Date(t.createdAt) >= start);
+  // By expense date, not createdAt: a four-month-old receipt logged today
+  // belongs to the month it happened in.
+  return transactions.filter((t) => getTransactionDate(t) >= start);
 }
 
 function getUserShare(tx: Transaction, userId: string): number {
@@ -157,6 +159,51 @@ export function buildReportCsv(params: {
     }),
   ];
   return lines.join("\n");
+}
+
+/** Machine-readable sibling of the CSV — restorable, and safe to diff. */
+export function buildReportJson(params: {
+  period: ReportPeriod;
+  summary: ReportSummary;
+  outingRankings: OutingRanking[];
+  categoryData: { name: string; value: number }[];
+  friends: Friend[];
+  friendBalances: Map<string, number>;
+  outings?: Outing[];
+  transactions?: Transaction[];
+}): string {
+  return JSON.stringify(
+    {
+      app: "TripSplit",
+      kind: "report",
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      period: params.period,
+      summary: params.summary,
+      outings: params.outingRankings,
+      categories: params.categoryData,
+      friends: params.friends.map((f) => ({
+        id: f.id,
+        name: f.name,
+        email: f.email,
+        netBalance: params.friendBalances.get(f.id) ?? 0,
+      })),
+      transactions: params.transactions,
+      outingDetails: params.outings,
+    },
+    null,
+    2
+  );
+}
+
+export function downloadFile(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: `${mime};charset=utf-8;` });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 export function downloadCsv(filename: string, content: string) {

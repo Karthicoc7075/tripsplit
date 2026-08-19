@@ -94,6 +94,14 @@ export interface Outing {
   startDate?: string;
   endDate?: string;
   customCategories?: string[];
+  /** Kept at the top of the Reports timeline regardless of date. */
+  pinned?: boolean;
+  /** Free-text memory attached to the outing ("Best sunset of the year"). */
+  note?: string;
+  /** Free-form labels for filtering ("work", "family", "annual"). */
+  tags?: string[];
+  /** Hidden from the default timeline without being deleted. */
+  archived?: boolean;
 }
 
 export interface MemberBalance {

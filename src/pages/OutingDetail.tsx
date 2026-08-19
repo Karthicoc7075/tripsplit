@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft, Pencil, Receipt, Users, Plus,
   MapPin, Calendar, Trash2, PieChart, Download, Cloud, Wallet, ArrowDownLeft,
+  AlertTriangle, RotateCcw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { motion } from "framer-motion";
@@ -12,8 +13,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import { PremiumTabs, PremiumTabsContent, PremiumTabsList, PremiumTabsTrigger } from "@/components/fintech/PremiumTabs";
 import { StatCard } from "@/components/fintech/StatCard";
-import { formatCurrency, formatRelativeTime } from "@/lib/format";
-import { formatOutingDates, getMemberPaidAndShare, isOutingCreator } from "@/lib/outing";
+import { formatCurrency, formatRelativeTime, getCurrencySymbol } from "@/lib/format";
+import { formatOutingDates, getMemberCashFlow, isOutingCreator } from "@/lib/outing";
+import { isPrematurelySettled } from "@/lib/dashboardContext";
+import { getOutingMembers } from "@/lib/members";
+import { memberLabel } from "@/lib/displayNames";
 import { getOutingMemberIds } from "@/lib/members";
 import { getCategoryColor } from "@/types";
 import {
@@ -49,7 +53,7 @@ import {
   getCategoryBreakdown,
   getMemberSpendingData,
 } from "@/lib/outingAnalysis";
-import { canUserModifyTransaction } from "@/lib/permissions";
+import { canUserEditTransaction, canUserDeleteTransaction } from "@/lib/permissions";
 import { exportOutingBackup } from "@/lib/outingBackup";
 import { computeSplits } from "@/lib/balances";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -62,7 +66,6 @@ export default function OutingDetail() {
   const {
     transactions: allTransactions,
     getOuting,
-    getOutingTransactions,
     getOutingTotalSpent,
     addTransaction,
     updateTransaction,
@@ -72,6 +75,7 @@ export default function OutingDetail() {
     deleteOuting,
     friends,
     undoLastAction,
+    isOnline,
     currentUserId,
     currentUserName,
     loading,
@@ -115,9 +119,11 @@ export default function OutingDetail() {
   } | null>(null);
   const [settleAmountInput, setSettleAmountInput] = useState<string>("");
   const [isCustomAmount, setIsCustomAmount] = useState<boolean>(false);
-  const [highlightTransactions, setHighlightTransactions] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const txIdParam = searchParams.get("tx");
+  const addParam = searchParams.get("add");
+  // Guards against re-opening while the param is momentarily still in the URL.
+  const addHandledRef = useRef(false);
 
   useEffect(() => {
     if (txIdParam && transactions.length > 0) {
@@ -131,15 +137,7 @@ export default function OutingDetail() {
     }
   }, [txIdParam, transactions, searchParams, setSearchParams]);
 
-  const transactionsSectionRef = useRef<HTMLDivElement>(null);
 
-  const scrollToTransactions = () => {
-    transactionsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setHighlightTransactions(true);
-    setTimeout(() => {
-      setHighlightTransactions(false);
-    }, 2000);
-  };
 
   const totalSpent = useMemo(
     () => getOutingTotalSpent(id ?? ""),
@@ -174,55 +172,46 @@ export default function OutingDetail() {
   }, [debtEdges, currentUserId]);
 
   const personalAnalysis = useMemo(
-    () => getPersonalSpendingAnalysis(currentUserId, transactions, outing),
-    [currentUserId, transactions, outing]
+    () => getPersonalSpendingAnalysis(currentUserId, transactions, outing, settlementRecords),
+    [currentUserId, transactions, outing, settlementRecords]
   );
 
-  const userMemberBalance = useMemo(
-    () => memberBalances.find((b) => b.memberId === currentUserId)?.balance ?? 0,
-    [memberBalances, currentUserId]
-  );
 
-  const adjustedPersonalAnalysis = useMemo(() => {
-    const bal = userMemberBalance;
-    return {
-      ...personalAnalysis,
-      netBalance: bal,
-      overspendAmount: bal < 0 ? Math.abs(bal) : 0,
-      isOverspending: bal < -0.01,
-      isHighUpfrontPayment:
-        bal > 0.01 && personalAnalysis.paid > personalAnalysis.share + 0.01,
-    };
-  }, [personalAnalysis, userMemberBalance]);
 
-  const outingSettleAmount = useMemo(
-    () =>
-      individualReturns
-        .filter((r) => !r.youAreOwed)
-        .reduce((sum, r) => sum + r.amount, 0),
-    [individualReturns]
-  );
-
-  const totalSettledOut = useMemo(
-    () =>
-      settlementRecords
-        .filter((r) => r.fromId === currentUserId)
-        .reduce((sum, r) => sum + r.amount, 0),
-    [settlementRecords, currentUserId]
-  );
 
   const personalStats = useMemo(
     () => getOutingPersonalStats(id ?? "", currentUserId, transactions),
     [id, currentUserId, transactions]
   );
+  /** Raw money fronted — what the payments breakdown modal itemises. */
   const yourPaid = personalStats.yourPaid;
   const yourShare = personalStats.yourShare;
+
+  /**
+   * Money actually gone from this account for this outing:
+   *   paid + settlements sent out − settlements received back.
+   * Converges to `yourShare` once the outing is fully settled.
+   */
+  const outingCashFlow = useMemo(
+    () => getMemberCashFlow(currentUserId, transactions, settlementRecords),
+    [currentUserId, transactions, settlementRecords]
+  );
+
+  const youSpentSubtitle = useMemo(() => {
+    const parts = [`Paid ${formatCurrency(outingCashFlow.paid)}`];
+    if (outingCashFlow.settledIn > 0) parts.push(`back ${formatCurrency(outingCashFlow.settledIn)}`);
+    if (outingCashFlow.settledOut > 0) parts.push(`settled ${formatCurrency(outingCashFlow.settledOut)}`);
+    return parts.length > 1 ? parts.join(" · ") : "Tap for payment breakdown";
+  }, [outingCashFlow]);
 
 
   const categoryData = useMemo(() => getCategoryBreakdown(transactions), [transactions]);
   const memberSpendingData = useMemo(
-    () => (outing ? getMemberSpendingData(outing.members, transactions, currentUserId) : []),
-    [outing, transactions, currentUserId]
+    () =>
+      outing
+        ? getMemberSpendingData(outing.members, transactions, currentUserId, settlementRecords)
+        : [],
+    [outing, transactions, currentUserId, settlementRecords]
   );
 
   useEffect(() => {
@@ -248,9 +237,33 @@ export default function OutingDetail() {
     setIsAddTxOpen(true);
   };
 
+  /**
+   * `?add=1` opens the add-expense sheet straight away, so every "Add expense"
+   * button in the app lands on the form instead of dumping the user on this
+   * page to hunt for it. Waits for `outing` — on a cold load the form would
+   * otherwise render with no members.
+   */
+  useEffect(() => {
+    if (addParam !== "1") {
+      addHandledRef.current = false;
+      return;
+    }
+    if (addHandledRef.current || loading || !outing) return;
+    addHandledRef.current = true;
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("add");
+    setSearchParams(next, { replace: true });
+
+    // Routed through the same helper as the in-page button, so a blown budget
+    // still warns first.
+    openAddTransaction();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addParam, loading, outing?.id]);
+
   const openEditTx = (tx: import("@/types").Transaction) => {
-    if (!outing || !canUserModifyTransaction(tx, currentUserId, outing)) {
-      toast.error("Only the expense creator or outing owner can edit this");
+    if (!outing || !canUserEditTransaction(tx, currentUserId, outing)) {
+      toast.error("Only members of this outing can edit its expenses");
       return;
     }
     setEditingTx(tx);
@@ -266,8 +279,8 @@ export default function OutingDetail() {
         : values.customSplits;
 
     if (editingTx) {
-      if (!canUserModifyTransaction(editingTx, currentUserId, outing)) {
-        toast.error("Only the expense creator or outing owner can edit this");
+      if (!canUserEditTransaction(editingTx, currentUserId, outing)) {
+        toast.error("Only members of this outing can edit its expenses");
         return;
       }
       updateTransaction(editingTx.id, {
@@ -281,7 +294,7 @@ export default function OutingDetail() {
         category: values.category,
         date: values.date,
       });
-      toast.success("Transaction updated");
+      toast.success("Transaction updated", offlineNote());
       resetTxModal();
       return;
     }
@@ -308,26 +321,63 @@ export default function OutingDetail() {
     const newTotal = totalSpent + values.amount;
     if (hasBudget && newTotal > outing.budget!) {
       setBudgetModalOpen(true);
-      toast.warning("Transaction added but trip budget is now exceeded");
+      toast.warning("Transaction added but trip budget is now exceeded", offlineNote());
     } else {
-      toast.success("Transaction added", {
+      toast.success(isOnline ? "Transaction added" : "Saved on this device", {
+        ...offlineNote(),
         action: { label: "Undo", onClick: () => { undoLastAction(); toast.info("Undone"); } },
       });
     }
   };
 
+  /** Reassures the user their expense is safe locally and will sync later. */
+  const offlineNote = () =>
+    isOnline ? {} : { description: "Will sync when you're back online" };
+
   const handleDeleteTx = () => {
     if (!deleteTxId || !outing) return;
     const tx = transactions.find((t) => t.id === deleteTxId);
-    if (!tx || !canUserModifyTransaction(tx, currentUserId, outing)) {
-      toast.error("Only the expense creator or outing owner can delete this");
+    if (!tx || !canUserDeleteTransaction(tx, currentUserId, outing)) {
+      toast.error("Only the person who added this, or the outing owner, can delete it");
       setDeleteTxId(null);
       return;
     }
     deleteTransaction(deleteTxId);
-    toast.success("Transaction deleted");
+    toast.success(`"${tx.title}" deleted`, {
+      description: `${formatCurrency(tx.amount)} removed from ${outing.name}`,
+      action: { label: "Undo", onClick: () => undoLastAction() },
+    });
     setDeleteTxId(null);
   };
+
+  /**
+   * "Balances will be recalculated" tells the user nothing. This says exactly
+   * whose balance moves and by how much, before they commit.
+   */
+  const deleteImpact = useMemo(() => {
+    if (!deleteTxId || !outing) return null;
+    const tx = transactions.find((t) => t.id === deleteTxId);
+    if (!tx) return null;
+
+    const members = getOutingMembers(outing);
+    const before = computeMemberBalances(members, transactions, settlementRecords);
+    const after = computeMemberBalances(
+      members,
+      transactions.filter((t) => t.id !== tx.id),
+      settlementRecords
+    );
+
+    const changes = members
+      .map((m) => {
+        const from = before.find((b) => b.memberId === m.id)?.balance ?? 0;
+        const to = after.find((b) => b.memberId === m.id)?.balance ?? 0;
+        return { id: m.id, name: m.name, delta: Math.round((to - from) * 100) / 100 };
+      })
+      .filter((c) => Math.abs(c.delta) > 0.01)
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+    return { tx, changes };
+  }, [deleteTxId, outing, transactions, settlementRecords]);
 
   const handleStatusChange = (status: "ongoing" | "settled") => {
     if (!outing) return;
@@ -339,8 +389,12 @@ export default function OutingDetail() {
   const isMember = outing ? getOutingMemberIds(outing).includes(currentUserId) : false;
   const canEditOuting = isCreator || isMember;
 
-  const canModifySelectedTx = selectedTx && outing
-    ? canUserModifyTransaction(selectedTx, currentUserId, outing)
+  const canEditSelectedTx = selectedTx && outing
+    ? canUserEditTransaction(selectedTx, currentUserId, outing)
+    : false;
+
+  const canDeleteSelectedTx = selectedTx && outing
+    ? canUserDeleteTransaction(selectedTx, currentUserId, outing)
     : false;
 
   const handleExportBackup = () => {
@@ -399,8 +453,8 @@ export default function OutingDetail() {
 
   const handleEditFromDetail = () => {
     if (!selectedTx || !outing) return;
-    if (!canUserModifyTransaction(selectedTx, currentUserId, outing)) {
-      toast.error("Only the expense creator or outing owner can edit this");
+    if (!canUserEditTransaction(selectedTx, currentUserId, outing)) {
+      toast.error("Only members of this outing can edit its expenses");
       return;
     }
     openEditTx(selectedTx);
@@ -409,8 +463,8 @@ export default function OutingDetail() {
 
   const handleDeleteFromDetail = () => {
     if (!selectedTx || !outing) return;
-    if (!canUserModifyTransaction(selectedTx, currentUserId, outing)) {
-      toast.error("Only the expense creator or outing owner can delete this");
+    if (!canUserDeleteTransaction(selectedTx, currentUserId, outing)) {
+      toast.error("Only the person who added this, or the outing owner, can delete it");
       return;
     }
     setDeleteTxId(selectedTx.id);
@@ -427,8 +481,15 @@ export default function OutingDetail() {
       budget: data.budget,
       startDate: data.startDate,
       endDate: data.endDate,
+      note: data.note,
+      tags: data.tags,
+      archived: data.archived,
       ...(data.membersChanged ? { members: data.members } : {}),
     });
+
+    if (!data.membersChanged) {
+      toast.success("Outing updated", { description: data.name });
+    }
 
     if (data.membersChanged) {
       const { recalculatedCount, needsReviewCount } = updateOutingMembers(
@@ -490,6 +551,7 @@ export default function OutingDetail() {
           <label className="text-sm font-medium text-muted-foreground">Amount (₹)</label>
           <Input
             type="number"
+            inputMode="decimal"
             min="0.01"
             step="0.01"
             className="text-lg font-semibold"
@@ -689,25 +751,26 @@ export default function OutingDetail() {
         <StatCard
           title="Total Spent"
           value={totalSpent}
-          prefix="₹"
+          prefix={getCurrencySymbol()}
           variant="primary"
           subtitle={hasBudget && outing ? `Budget: ${formatCurrency(outing.budget!)}` : undefined}
         />
         <StatCard
-          title="You Paid"
-          value={yourPaid}
-          prefix="₹"
+          title="You Spent"
+          value={outingCashFlow.cashOut}
+          prefix={getCurrencySymbol()}
           variant="primary"
+          subtitle={youSpentSubtitle}
           onClick={() => setIsYourPaidModalOpen(true)}
         />
         <StatCard
           title="Your Share"
           value={yourShare}
-          prefix="₹"
+          prefix={getCurrencySymbol()}
           variant="default"
         />
         <div className="col-span-2 lg:col-span-1 min-w-0">
-          <NetBalanceCard analysis={adjustedPersonalAnalysis} />
+          <NetBalanceCard analysis={personalAnalysis} />
         </div>
       </motion.div>
 
@@ -742,6 +805,37 @@ export default function OutingDetail() {
             {txModalContent}
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Settled with the trip still ahead — almost always a mis-tap, and it
+          hides the outing from the dashboard and from balances. */}
+      {outing && isPrematurelySettled(outing) && (
+        <div className="fintech-card border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">
+                  Marked settled, but this outing hasn&apos;t finished
+                </p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  It won&apos;t appear on your dashboard and won&apos;t count towards
+                  your balances until you reopen it.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="destructive"
+              className="h-10 shrink-0 gap-2"
+              onClick={() => {
+                updateOuting(outing.id, { status: "ongoing" });
+                toast.success("Outing reopened");
+              }}
+            >
+              <RotateCcw size={16} /> Reopen
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Tabs */}
@@ -795,7 +889,7 @@ export default function OutingDetail() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <Avatar className="h-9 w-9 shrink-0">
-                          <AvatarFallback>{item.name.charAt(0)}</AvatarFallback>
+                          <AvatarFallback seed={item.memberId}>{item.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className="min-w-0">
                           <p className="font-medium text-foreground text-sm sm:text-base leading-tight">{item.name}</p>
@@ -874,14 +968,9 @@ export default function OutingDetail() {
             />
           </div>
 
-          <div ref={transactionsSectionRef} className="space-y-3">
+          <div className="space-y-3">
             <h3 className="font-semibold text-foreground">All Transactions</h3>
-            <div
-              className={cn(
-                "fintech-card overflow-hidden transition-all duration-500",
-                highlightTransactions && "ring-2 ring-primary border-primary/50 shadow-[0_0_15px_rgba(15,118,110,0.3)] scale-[1.005]"
-              )}
-            >
+            <div className="fintech-card overflow-hidden">
               {loading ? (
                 <div className="divide-y divide-border/50">
                   {[1, 2, 3].map((i) => (
@@ -914,6 +1003,7 @@ export default function OutingDetail() {
               outing={outing}
               members={outing.members}
               transactions={transactions}
+              settlementRecords={settlementRecords}
               memberBalances={memberBalances}
               currentUserId={currentUserId}
             />
@@ -961,7 +1051,8 @@ export default function OutingDetail() {
               members={outing.members}
               currentUserId={currentUserId}
               currentUserName={currentUserName}
-              canManage={canModifySelectedTx}
+              canEdit={canEditSelectedTx}
+                canDelete={canDeleteSelectedTx}
               onEdit={handleEditFromDetail}
               onDelete={handleDeleteFromDetail}
             />
@@ -978,7 +1069,8 @@ export default function OutingDetail() {
                 members={outing.members}
                 currentUserId={currentUserId}
                 currentUserName={currentUserName}
-                canManage={canModifySelectedTx}
+                canEdit={canEditSelectedTx}
+                canDelete={canDeleteSelectedTx}
                 onEdit={handleEditFromDetail}
                 onDelete={handleDeleteFromDetail}
               />
@@ -1067,8 +1159,28 @@ export default function OutingDetail() {
       <ConfirmDialog
         open={!!deleteTxId}
         onOpenChange={(o) => !o && setDeleteTxId(null)}
-        title="Delete this transaction?"
-        description="This expense will be permanently removed and balances will be recalculated."
+        title={
+          deleteImpact ? `Delete "${deleteImpact.tx.title}"?` : "Delete this transaction?"
+        }
+        description={
+          deleteImpact
+            ? `${formatCurrency(deleteImpact.tx.amount)} will be removed permanently. ${
+                deleteImpact.changes.length === 0
+                  ? "No balances change."
+                  : `Balances change for ${deleteImpact.changes.length} ${
+                      deleteImpact.changes.length === 1 ? "member" : "members"
+                    }: ${deleteImpact.changes
+                      .slice(0, 3)
+                      .map(
+                        (c) =>
+                          `${memberLabel(c.name, c.id === currentUserId)} ${
+                            c.delta > 0 ? "+" : "-"
+                          }${formatCurrency(Math.abs(c.delta))}`
+                      )
+                      .join(", ")}${deleteImpact.changes.length > 3 ? "…" : ""}.`
+              } You can undo this.`
+            : "This expense will be permanently removed."
+        }
         confirmLabel="Delete transaction"
         onConfirm={handleDeleteTx}
         variant="destructive"

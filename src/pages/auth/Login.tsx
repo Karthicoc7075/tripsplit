@@ -8,6 +8,7 @@ import {
   getAuthErrorTitle,
 } from "@/lib/authErrors";
 import { toast } from "sonner";
+import { Users, Calculator, Wallet } from "lucide-react";
 import { AuthPageShell } from "@/components/auth/AuthPageShell";
 import { AuthBrandHeader } from "@/components/auth/AuthBrandHeader";
 import { AuthCard } from "@/components/auth/AuthCard";
@@ -25,6 +26,8 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
+  // A returning user does not need the pitch — only show it to cold arrivals.
+  const [rememberedEmail, setRememberedEmail] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -35,6 +38,7 @@ export default function Login() {
     if (remembered) {
       setEmail(remembered);
       setRememberMe(true);
+      setRememberedEmail(true);
     }
   }, []);
 
@@ -71,6 +75,23 @@ export default function Login() {
         title="Welcome back"
         subtitle="Sign in to continue managing your outings"
       />
+
+      {/* One line on what this is, for anyone arriving cold. Hidden once they
+          have signed in before, since it is then just noise. */}
+      {!rememberedEmail && (
+        <ul className="mb-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
+          {[
+            { icon: Users, text: "Split with friends" },
+            { icon: Calculator, text: "We do the maths" },
+            { icon: Wallet, text: "Settle in one tap" },
+          ].map(({ icon: Icon, text }) => (
+            <li key={text} className="flex items-center gap-2">
+              <Icon className="h-4 w-4 shrink-0 text-primary" />
+              <span className="truncate">{text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <AuthCard
         footer={<AuthFooterLink text="Don't have an account?" linkText="Create one" to="/signup" />}

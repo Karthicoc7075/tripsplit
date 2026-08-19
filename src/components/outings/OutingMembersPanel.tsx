@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -9,10 +10,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { BottomSheet } from "@/components/BottomSheet";
-import { formatCurrency } from "@/lib/format";
-import { getMemberPaidAndShare, isOutingCreator } from "@/lib/outing";
-import { memberLabel } from "@/lib/displayNames";
-import type { Outing, OutingMember, Transaction } from "@/types";
+import { formatCurrency, formatDateTime } from "@/lib/format";
+import { getMemberCashFlow, isOutingCreator } from "@/lib/outing";
+import { getFirstName, memberLabel } from "@/lib/displayNames";
+import type { Outing, OutingMember, SettlementRecord, Transaction } from "@/types";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
@@ -25,6 +26,7 @@ interface OutingMembersPanelProps {
   outing: Outing;
   members: OutingMember[];
   transactions: Transaction[];
+  settlementRecords: SettlementRecord[];
   memberBalances: MemberBalance[];
   currentUserId: string;
 }
@@ -43,22 +45,31 @@ function MemberContributionDetail({
   member,
   outing,
   transactions,
+  settlementRecords,
   balance,
 }: {
   member: OutingMember;
   outing: Outing;
   transactions: Transaction[];
+  settlementRecords: SettlementRecord[];
   balance: number;
 }) {
-  const { paid, share } = getMemberPaidAndShare(member.id, transactions);
+  const { paid, share, cashOut, settledIn, settledOut } = getMemberCashFlow(
+    member.id,
+    transactions,
+    settlementRecords
+  );
   const related = getMemberTransactions(member.id, transactions);
   const isCreator = isOutingCreator(outing, member.id);
+  const memberSettlements = settlementRecords.filter(
+    (r) => r.fromId === member.id || r.toId === member.id
+  );
 
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/15">
         <Avatar className="h-12 w-12">
-          <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+          <AvatarFallback seed={member.id} className="font-semibold">
             {member.name.charAt(0)}
           </AvatarFallback>
         </Avatar>
@@ -72,8 +83,15 @@ function MemberContributionDetail({
 
       <div className="grid grid-cols-3 gap-3">
         <div className="p-3 rounded-xl border border-border/50 text-center">
-          <p className="text-xs text-muted-foreground">Paid</p>
-          <p className="font-semibold mt-1">{formatCurrency(paid)}</p>
+          <p className="text-xs text-muted-foreground">Spent</p>
+          <p className="font-semibold mt-1 tabular-nums">{formatCurrency(cashOut)}</p>
+          {cashOut !== paid && (
+            <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+              Paid {formatCurrency(paid)}
+              {settledIn > 0 && ` · back ${formatCurrency(settledIn)}`}
+              {settledOut > 0 && ` · settled ${formatCurrency(settledOut)}`}
+            </p>
+          )}
         </div>
         <div className="p-3 rounded-xl border border-border/50 text-center">
           <p className="text-xs text-muted-foreground">Share</p>
@@ -87,9 +105,7 @@ function MemberContributionDetail({
             Math.abs(balance) < 0.01 && "border-border/50"
           )}
         >
-          <p className="text-xs text-muted-foreground">
-            {balance < -0.01 ? "Owes" : "Return Amount"}
-          </p>
+          <p className="text-xs text-muted-foreground">Net Balance</p>
           <p
             className={cn(
               "font-semibold mt-1",
@@ -100,10 +116,82 @@ function MemberContributionDetail({
             {balance > 0.01
               ? `+${formatCurrency(balance)}`
               : balance < -0.01
-                ? `${formatCurrency(Math.abs(balance))}`
+                ? `-${formatCurrency(Math.abs(balance))}`
                 : "Settled"}
           </p>
         </div>
+      </div>
+
+      <div>
+        <div className="flex items-baseline justify-between gap-2 mb-3">
+          <h4 className="font-medium text-sm text-foreground">
+            Settlements ({memberSettlements.length})
+          </h4>
+          {memberSettlements.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {settledIn > 0 && (
+                <span className="text-success font-medium">
+                  Received {formatCurrency(settledIn)}
+                </span>
+              )}
+              {settledIn > 0 && settledOut > 0 && " · "}
+              {settledOut > 0 && (
+                <span className="text-destructive font-medium">
+                  Paid {formatCurrency(settledOut)}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+        {memberSettlements.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No settlements recorded yet.
+          </p>
+        ) : (
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {memberSettlements.map((r) => {
+              // Received = money came back to this member. Paid = money went out.
+              const received = r.toId === member.id;
+              const otherName = getFirstName(received ? r.fromName : r.toName);
+
+              return (
+                <div
+                  key={r.id}
+                  className={cn(
+                    "flex justify-between items-center gap-3 p-3 rounded-lg border",
+                    received
+                      ? "border-success/30 bg-success/5"
+                      : "border-destructive/30 bg-destructive/5"
+                  )}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {received ? (
+                      <ArrowDownLeft className="h-4 w-4 shrink-0 text-success" />
+                    ) : (
+                      <ArrowUpRight className="h-4 w-4 shrink-0 text-destructive" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">
+                        {received ? `Received from ${otherName}` : `Paid to ${otherName}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {formatDateTime(r.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-sm font-semibold shrink-0 tabular-nums",
+                      received ? "text-success" : "text-destructive"
+                    )}
+                  >
+                    {formatCurrency(r.amount)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div>
@@ -151,6 +239,7 @@ export function OutingMembersPanel({
   outing,
   members,
   transactions,
+  settlementRecords,
   memberBalances,
   currentUserId,
 }: OutingMembersPanelProps) {
@@ -165,6 +254,7 @@ export function OutingMembersPanel({
       member={selectedMember}
       outing={outing}
       transactions={transactions}
+      settlementRecords={settlementRecords}
       balance={getBalance(selectedMember.id)}
     />
   ) : null;
@@ -195,7 +285,7 @@ export function OutingMembersPanel({
                 )}
               >
                 <Avatar className="h-6 w-6">
-                  <AvatarFallback className="text-[10px] font-semibold">
+                  <AvatarFallback seed={m.id} className="text-[10px] font-semibold">
                     {m.name.charAt(0)}
                   </AvatarFallback>
                 </Avatar>
@@ -207,7 +297,7 @@ export function OutingMembersPanel({
 
         <div className="grid gap-3 sm:grid-cols-2">
           {members.map((m) => {
-            const { paid, share } = getMemberPaidAndShare(m.id, transactions);
+            const { share, cashOut } = getMemberCashFlow(m.id, transactions, settlementRecords);
             const balance = getBalance(m.id);
             const isCurrentUser = m.id === currentUserId;
             const isCreator = isOutingCreator(outing, m.id);
@@ -224,32 +314,48 @@ export function OutingMembersPanel({
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <Avatar className="h-10 w-10 shrink-0">
-                    <AvatarFallback
+                    <AvatarFallback seed={m.id}
                       className={cn(
                         isCurrentUser && "bg-primary/15 text-primary font-semibold"
                       )}
-                    >
-                      {m.name.charAt(0)}
+                    >{m.name.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0">
                     <p className={cn("font-medium truncate", isCurrentUser && "text-primary")}>
                       {memberLabel(m.name, isCurrentUser)}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Paid {formatCurrency(paid)} · {balance >= 0 ? `Return amount ${formatCurrency(balance)}` : `Owes ${formatCurrency(Math.abs(balance))}`}
-                      {isCreator && " · Created outing"}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-xs">
+                      <span className="text-muted-foreground">
+                        Spent{" "}
+                        <span className="font-semibold text-foreground tabular-nums">
+                          {formatCurrency(cashOut)}
+                        </span>
+                      </span>
+                      <span className="text-muted-foreground/40">·</span>
+                      <span className="text-muted-foreground">
+                        Share{" "}
+                        <span className="font-semibold tabular-nums">
+                          {formatCurrency(share)}
+                        </span>
+                      </span>
+                      {isCreator && (
+                        <>
+                          <span className="text-muted-foreground/40">·</span>
+                          <span className="text-muted-foreground">Created outing</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <Badge
                   variant={
-                    balance > 0.01 ? "default" : balance < -0.01 ? "destructive" : "secondary"
+                    balance > 0.01 ? "success" : balance < -0.01 ? "destructive" : "secondary"
                   }
-                  className="shrink-0 ml-2"
+                  className="shrink-0 ml-2 tabular-nums"
                 >
                   {balance > 0.01
-                    ? `+${formatCurrency(balance)}`
+                    ? `Return ${formatCurrency(balance)}`
                     : balance < -0.01
                       ? `Owes ${formatCurrency(Math.abs(balance))}`
                       : "Settled"}

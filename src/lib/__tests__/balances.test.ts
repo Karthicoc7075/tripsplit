@@ -5,6 +5,8 @@ import {
   simplifyDebts,
   getOutingTotalSpent,
   getMemberBalance,
+  computeGlobalSettlements,
+  computeFriendBalances,
 } from "../balances";
 import type { OutingMember, Transaction, SettlementRecord } from "@/types";
 
@@ -207,5 +209,57 @@ describe("balances logic", () => {
       expect(getMemberBalance("m1", members, txs)).toBe(20);
       expect(getMemberBalance("m2", members, txs)).toBe(-10);
     });
+  });
+});
+
+describe("settled outings are excluded from live debts", () => {
+  const members: OutingMember[] = [
+    { id: "me", name: "Karthi" },
+    { id: "f1", name: "Arun" },
+  ];
+  const outing = (id: string, status: "ongoing" | "planned" | "settled") => ({
+    id,
+    name: id,
+    category: "Trip",
+    date: "",
+    status,
+    members,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    createdById: "me",
+    createdByName: "Karthi",
+  });
+  const txs = [
+    {
+      id: "t1",
+      outingId: "o1",
+      title: "Hotel",
+      amount: 200,
+      paidById: "me",
+      paidByName: "Karthi",
+      splitMode: "equally",
+      splits: [
+        { memberId: "me", amount: 100 },
+        { memberId: "f1", amount: 100 },
+      ],
+      date: "",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      createdById: "me",
+      createdByName: "Karthi",
+    },
+  ] as Transaction[];
+
+  it("computeGlobalSettlements skips settled outings", () => {
+    expect(computeGlobalSettlements([outing("o1", "ongoing")], txs, "me")).toHaveLength(1);
+    expect(computeGlobalSettlements([outing("o1", "settled")], txs, "me")).toHaveLength(0);
+    // Planned outings can hold advance bookings, so they still count.
+    expect(computeGlobalSettlements([outing("o1", "planned")], txs, "me")).toHaveLength(1);
+  });
+
+  it("computeFriendBalances skips settled outings", () => {
+    const friends = [{ id: "f1", name: "Arun", email: "a@x.com" }];
+    const open = computeFriendBalances(friends, [outing("o1", "ongoing")], txs, "me", "Karthi");
+    const closed = computeFriendBalances(friends, [outing("o1", "settled")], txs, "me", "Karthi");
+    expect(open.get("f1")).toBe(100);
+    expect(closed.get("f1")).toBe(0);
   });
 });

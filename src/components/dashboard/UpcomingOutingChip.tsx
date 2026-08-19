@@ -37,8 +37,7 @@ export function UpcomingOutingChip({ outing, yourShare }: UpcomingOutingChipProp
         <div className="flex -space-x-1.5">
           {outing.members.slice(0, 4).map((m, i) => (
             <Avatar key={m.id} className="h-7 w-7 border-2 border-card" style={{ zIndex: 4 - i }}>
-              <AvatarFallback className="text-[9px] bg-primary/10 text-primary font-medium">
-                {m.name.charAt(0)}
+              <AvatarFallback seed={m.id} className="text-[9px] bg-primary/10 text-primary font-medium">{m.name.charAt(0)}
               </AvatarFallback>
             </Avatar>
           ))}

@@ -37,8 +37,7 @@ export function FriendCard({
     >
       <div className="flex items-start gap-3">
         <Avatar className="h-11 w-11 border border-border/60 shrink-0">
-          <AvatarFallback className="bg-primary/10 text-primary font-medium">
-            {friend.name.charAt(0)}
+          <AvatarFallback seed={friend.id} className="bg-primary/10 text-primary font-medium">{friend.name.charAt(0)}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">

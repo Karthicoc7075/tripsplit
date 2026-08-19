@@ -47,6 +47,19 @@ export function formatPersonOwes(name: string, amount: number): string {
   return `${getFirstName(name)} owes ${formatCurrency(amount)}`;
 }
 
+/**
+ * The two directions of a Net Balance, worded the same everywhere it appears.
+ * Mirrors the app's vocabulary: money coming back is a "return", money going
+ * out is a "settle"/payment to friends.
+ */
+export function formatPayTo(amount: number, to = "friends"): string {
+  return `You pay ${formatCurrency(amount)} to ${to}`;
+}
+
+export function formatReturnFrom(amount: number, from = "friends"): string {
+  return `${formatCurrency(amount)} return from ${from}`;
+}
+
 export function formatPersonIsOwed(name: string, amount: number): string {
   const isMe = checkIsMe(name);
   if (isMe) {

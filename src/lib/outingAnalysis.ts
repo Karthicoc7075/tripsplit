@@ -1,5 +1,5 @@
-import type { Transaction, Outing } from "@/types";
-import { getMemberPaidAndShare } from "@/lib/outing";
+import type { SettlementRecord, Transaction, Outing } from "@/types";
+import { getMemberCashFlow } from "@/lib/outing";
 import { roundMoney } from "@/lib/format";
 import { memberLabel } from "@/lib/displayNames";
 
@@ -23,7 +23,7 @@ export function getOutingPersonalStats(
     outingTransactions.reduce((sum, tx) => sum + tx.amount, 0)
   );
 
-  const { paid: yourPaid, share: yourShare } = getMemberPaidAndShare(
+  const { paid: yourPaid, share: yourShare } = getMemberCashFlow(
     currentUserId,
     outingTransactions
   );
@@ -39,6 +39,10 @@ export function getOutingPersonalStats(
 
 export interface PersonalSpendingAnalysis {
   paid: number;
+  /** Money actually gone: paid + settlements sent − settlements received. */
+  spent: number;
+  settledIn: number;
+  settledOut: number;
   share: number;
   netBalance: number;
   overspendAmount: number;
@@ -54,10 +58,17 @@ export interface PersonalSpendingAnalysis {
 export function getPersonalSpendingAnalysis(
   userId: string,
   transactions: Transaction[],
-  outing?: Outing
+  outing?: Outing,
+  settlementRecords: SettlementRecord[] = []
 ): PersonalSpendingAnalysis {
-  const { paid, share } = getMemberPaidAndShare(userId, transactions);
-  const netBalance = roundMoney(paid - share);
+  // Settlement-aware, so netBalance here matches computeMemberBalances() and the
+  // three tiles in the Analysis tab actually reconcile: spent − share = netBalance.
+  const { paid, share, cashOut, settledIn, settledOut, net } = getMemberCashFlow(
+    userId,
+    transactions,
+    settlementRecords
+  );
+  const netBalance = net;
   const overspendAmount = netBalance < 0 ? Math.abs(netBalance) : 0;
   const memberCount = outing?.members.length ?? 1;
   const budgetShare =
@@ -79,6 +90,9 @@ export function getPersonalSpendingAnalysis(
 
   return {
     paid: roundMoney(paid),
+    spent: roundMoney(cashOut),
+    settledIn: roundMoney(settledIn),
+    settledOut: roundMoney(settledOut),
     share: roundMoney(share),
     netBalance,
     overspendAmount,
@@ -103,20 +117,27 @@ export function getCategoryBreakdown(transactions: Transaction[]): { name: strin
     .sort((a, b) => b.value - a.value);
 }
 
+export interface MemberSpendingDatum {
+  name: string;
+  spent: number;
+  share: number;
+  /** Positive = gets money back, negative = owes. spent − share, settlement-aware. */
+  net: number;
+}
+
 export function getMemberSpendingData(
   members: Outing["members"],
   transactions: Transaction[],
-  currentUserId?: string
-): { name: string; paid: number; share: number; return: number; remaining: number }[] {
+  currentUserId?: string,
+  settlementRecords: SettlementRecord[] = []
+): MemberSpendingDatum[] {
   return members.map((m) => {
-    const { paid, share } = getMemberPaidAndShare(m.id, transactions);
-    const balance = roundMoney(paid - share);
+    const { share, cashOut, net } = getMemberCashFlow(m.id, transactions, settlementRecords);
     return {
       name: memberLabel(m.name, m.id === currentUserId),
-      paid: roundMoney(paid),
+      spent: roundMoney(cashOut),
       share: roundMoney(share),
-      return: balance > 0.01 ? balance : 0,
-      remaining: balance < -0.01 ? Math.abs(balance) : 0,
+      net: roundMoney(net),
     };
   });
 }

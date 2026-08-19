@@ -12,6 +12,7 @@ import { OutingCardSkeleton } from "@/components/skeletons";
 import { FilterChips } from "@/components/fintech/FilterChips";
 import { CreateOutingModal } from "@/components/outings/CreateOutingModal";
 import { filterOutings, sortOutings, type OutingFilter } from "@/lib/outing";
+import { DataErrorState } from "@/components/DataErrorState";
 
 export default function Outings() {
   const navigate = useNavigate();
@@ -25,6 +26,8 @@ export default function Outings() {
     getOutingYourShare,
     currentUserId,
     currentUserName,
+    error,
+    retry,
   } = useData();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,6 +50,17 @@ export default function Outings() {
     toast.success("Outing created successfully!");
     navigate(`/outings/${outing.id}`);
   };
+
+  if (error) {
+    return (
+      <div className="space-y-6 pb-6">
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+          Outings
+        </h1>
+        <DataErrorState message={error} onRetry={retry} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 sm:space-y-6 pb-6">

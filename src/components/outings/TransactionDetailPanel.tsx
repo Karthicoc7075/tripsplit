@@ -13,7 +13,9 @@ interface TransactionDetailPanelProps {
   currentUserName: string;
   onEdit: () => void;
   onDelete: () => void;
-  canManage?: boolean;
+  /** Any member may edit; only the author or the outing owner may delete. */
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 function DetailRow({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
@@ -32,13 +34,30 @@ export function TransactionDetailPanel({
   currentUserName,
   onEdit,
   onDelete,
-  canManage = true,
+  canEdit = true,
+  canDelete = true,
 }: TransactionDetailPanelProps) {
-  const memberName = (id: string) => {
-    const name = members.find((m) => m.id === id)?.name ?? "Member";
-    return memberLabel(name, id === currentUserId);
-  };
+  /** Resolved from the live member list, so a renamed member shows correctly. */
+  const memberName = (id: string, fallback = "Member") =>
+    memberLabel(members.find((m) => m.id === id)?.name ?? fallback, id === currentUserId);
+
   const yourSplit = tx.splits.find((s) => s.memberId === currentUserId)?.amount ?? 0;
+
+  // A multi-payer transaction stores paidByName as "Karthi, Arun". Passing that
+  // whole string to memberLabel() ran getFirstName() over it, which splits on
+  // whitespace — so it rendered "Karthi," and dropped everyone else. Build the
+  // list from the payments instead.
+  const payers = tx.payments?.length
+    ? tx.payments
+    : [{ memberId: tx.paidById, paidByName: tx.paidByName, amount: tx.amount }];
+
+  const payerNames = payers.map((p) => memberName(p.memberId, p.paidByName));
+  const paidByLabel =
+    payerNames.length === 1
+      ? payerNames[0]
+      : payerNames.length === 2
+        ? `${payerNames[0]} and ${payerNames[1]}`
+        : `${payerNames.slice(0, -1).join(", ")}, and ${payerNames[payerNames.length - 1]}`;
 
   return (
     <div className="space-y-5">
@@ -58,15 +77,23 @@ export function TransactionDetailPanel({
       <div className="fintech-card px-4 py-1">
         <DetailRow label="Category" value={tx.category ?? "Other"} />
         <DetailRow label="Expense date" value={tx.date} />
-        <DetailRow label="Paid by" value={memberLabel(tx.paidByName, tx.paidById === currentUserId)} />
-        {tx.payments && tx.payments.length > 1 && (
+        <DetailRow
+          label={payers.length > 1 ? `Paid by (${payers.length})` : "Paid by"}
+          value={paidByLabel}
+        />
+        {payers.length > 1 && (
           <DetailRow
-            label="Payments"
+            label="Split of payment"
             value={
               <div className="space-y-1">
-                {tx.payments.map((p) => (
-                  <div key={p.memberId}>
-                    {memberLabel(p.paidByName, p.memberId === currentUserId)}: {formatCurrency(p.amount)}
+                {payers.map((p) => (
+                  <div key={p.memberId} className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate">
+                      {memberName(p.memberId, p.paidByName)}
+                    </span>
+                    <span className="shrink-0 font-medium tabular-nums">
+                      {formatCurrency(p.amount)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -123,14 +150,18 @@ export function TransactionDetailPanel({
         />
       </div>
 
-      {canManage && (
+      {(canEdit || canDelete) && (
         <div className="flex gap-2">
-          <Button variant="outline" className="flex-1 gap-2" onClick={onEdit}>
-            <Pencil className="h-4 w-4" /> Edit
-          </Button>
-          <Button variant="destructive" className="flex-1 gap-2" onClick={onDelete}>
-            <Trash2 className="h-4 w-4" /> Delete
-          </Button>
+          {canEdit && (
+            <Button variant="outline" className="flex-1 gap-2" onClick={onEdit}>
+              <Pencil className="h-4 w-4" /> Edit
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="destructive" className="flex-1 gap-2" onClick={onDelete}>
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          )}
         </div>
       )}
     </div>

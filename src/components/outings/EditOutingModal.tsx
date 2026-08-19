@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from "@/lib/format";
 import { useEffect, useMemo, useState } from "react";
 import { Search, X, UserPlus, AlertCircle } from "lucide-react";
 import {
@@ -35,6 +36,11 @@ export interface EditOutingSaveData {
   endDate?: string;
   members: OutingMember[];
   membersChanged: boolean;
+  /** Empty string clears the note — `undefined` would leave the old one in place. */
+  note: string;
+  /** Empty array clears the tags, for the same reason. */
+  tags: string[];
+  archived: boolean;
 }
 
 interface EditOutingModalProps {
@@ -65,6 +71,9 @@ export function EditOutingModal({
   const [budget, setBudget] = useState(outing.budget ? String(outing.budget) : "");
   const [startDate, setStartDate] = useState(outing.startDate ?? "");
   const [endDate, setEndDate] = useState(outing.endDate ?? "");
+  const [note, setNote] = useState(outing.note ?? "");
+  const [tagsInput, setTagsInput] = useState((outing.tags ?? []).join(", "));
+  const [archived, setArchived] = useState(!!outing.archived);
   const outingMembers = getOutingMembers(outing);
   const [memberIds, setMemberIds] = useState<string[]>(outingMembers.map((m) => m.id));
   const [friendSearch, setFriendSearch] = useState("");
@@ -77,6 +86,9 @@ export function EditOutingModal({
       setCategory(outing.category);
       setLocation(outing.location ?? "");
       setBudget(outing.budget ? String(outing.budget) : "");
+      setNote(outing.note ?? "");
+      setTagsInput((outing.tags ?? []).join(", "));
+      setArchived(!!outing.archived);
       setStartDate(outing.startDate ?? "");
       setEndDate(outing.endDate ?? "");
       setMemberIds(getOutingMembers(outing).map((m) => m.id));
@@ -111,6 +123,20 @@ export function EditOutingModal({
     }
   };
 
+  // "goa, beach , 2026" -> ["goa","beach","2026"], de-duped, blanks dropped.
+  const parsedTags = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tagsInput
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+        )
+      ),
+    [tagsInput]
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -124,6 +150,9 @@ export function EditOutingModal({
       endDate: endDate || undefined,
       members: currentMembers,
       membersChanged: hasMemberChanges,
+      note: note.trim(),
+      tags: parsedTags,
+      archived,
     };
 
     if (transactions.length > 0 && hasMemberChanges) {
@@ -185,9 +214,65 @@ export function EditOutingModal({
       </div>
 
       <div className="space-y-2">
-        <Label>Budget (₹)</Label>
-        <Input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} />
+        <Label>Budget ({getCurrencySymbol()})</Label>
+        <Input type="number"
+            inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} />
       </div>
+
+      <div className="space-y-2">
+        <Label>Memory note</Label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          maxLength={280}
+          placeholder="Best sunset of the year 🌅"
+          className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          Shows on this outing&apos;s card in Reports. {280 - note.length} characters left.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Tags</Label>
+        <Input
+          value={tagsInput}
+          onChange={(e) => setTagsInput(e.target.value)}
+          placeholder="family, annual, beach"
+        />
+        {parsedTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {parsedTags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Comma separated. Searchable and filterable in Reports.
+        </p>
+      </div>
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/60 p-3">
+        <input
+          type="checkbox"
+          checked={archived}
+          onChange={(e) => setArchived(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+        />
+        <span className="min-w-0">
+          <span className="block text-sm font-medium text-foreground">Archive this outing</span>
+          <span className="block text-xs text-muted-foreground">
+            Hidden from the Reports timeline. Nothing is deleted — balances and
+            expenses stay exactly as they are.
+          </span>
+        </span>
+      </label>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
@@ -212,7 +297,7 @@ export function EditOutingModal({
             >
               <div className="flex items-center gap-2">
                 <Avatar className="h-8 w-8">
-                  <AvatarFallback className="text-xs">{m.name.charAt(0)}</AvatarFallback>
+                  <AvatarFallback seed={m.id} className="text-xs">{m.name.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <span className="text-sm font-medium">
                   {m.name}
@@ -274,8 +359,7 @@ export function EditOutingModal({
                   className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/40 transition-colors"
                 >
                   <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                      {friend.name.charAt(0)}
+                    <AvatarFallback seed={friend.id} className="text-[10px] bg-primary/10 text-primary">{friend.name.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">

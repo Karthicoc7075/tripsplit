@@ -1,5 +1,5 @@
 import type { Transaction, Outing, Friend } from "@/types";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, formatCurrency } from "@/lib/format";
 import { getOutingMemberIds, getOutingMembers } from "@/lib/members";
 import { getOutingStatusLabel } from "@/lib/outing";
 
@@ -51,7 +51,7 @@ function buildExpenseNotifications(
     return {
       id: `expense-${tx.id}`,
       title: "New expense",
-      message: `${payerText} paid ₹${tx.amount.toLocaleString("en-IN")} for '${tx.title}'${outingLabel}`,
+      message: `${payerText} paid ${formatCurrency(tx.amount)} for '${tx.title}'${outingLabel}`,
       time: formatRelativeTime(tx.createdAt),
       createdAt: tx.createdAt,
       path: `/outings/${tx.outingId}`,

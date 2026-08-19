@@ -37,7 +37,7 @@ export function HorizontalOutingCard({ outing, totalSpent, yourShare }: Horizont
             <div className="flex -space-x-1.5">
               {outing.members.slice(0, 3).map((m) => (
                 <Avatar key={m.id} className="h-6 w-6 border-2 border-card">
-                  <AvatarFallback className="text-[9px] bg-primary/10 text-primary">{m.name.charAt(0)}</AvatarFallback>
+                  <AvatarFallback seed={m.id} className="text-[9px] bg-primary/10 text-primary">{m.name.charAt(0)}</AvatarFallback>
                 </Avatar>
               ))}
             </div>

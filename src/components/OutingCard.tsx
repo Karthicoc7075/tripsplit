@@ -124,8 +124,7 @@ export function OutingCard({
               <div className="flex -space-x-2">
                 {outing.members.slice(0, 4).map((m, i) => (
                   <Avatar key={m.id} className="h-6 w-6 border-2 border-card" style={{ zIndex: 4 - i }}>
-                    <AvatarFallback className="bg-primary/10 text-primary text-[9px] font-semibold">
-                      {m.name.charAt(0)}
+                    <AvatarFallback seed={m.id} className="bg-primary/10 text-primary text-[9px] font-semibold">{m.name.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
                 ))}

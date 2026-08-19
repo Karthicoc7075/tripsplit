@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { updateProfile } from "firebase/auth";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { useAuth } from "@/context/AuthContext";
+import { CURRENCIES, getCurrencyCode, setCurrencyCode, type CurrencyCode } from "@/lib/format";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   User,
@@ -22,6 +23,7 @@ import {
   Trash2,
   Map,
   Cloud,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -192,6 +194,16 @@ export default function Settings() {
   const { user, signOut } = useAuth();
   const { backupAllOutings } = useData();
   const { theme, setTheme } = useTheme();
+  const [currency, setCurrency] = useState<CurrencyCode>(() => getCurrencyCode());
+
+  const handleCurrencyChange = (code: CurrencyCode) => {
+    setCurrencyCode(code);
+    setCurrency(code);
+    // formatCurrency() is a synchronous read used by dozens of components, so a
+    // reload is the reliable way to repaint every amount in the app at once.
+    toast.success("Currency updated", { description: "Reloading to apply…" });
+    setTimeout(() => window.location.reload(), 600);
+  };
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = isSettingsTab(searchParams.get("tab")) ? searchParams.get("tab")! : "account";
@@ -518,6 +530,49 @@ export default function Settings() {
                   );
                 })}
               </div>
+            </SettingsSection>
+
+            <SettingsSection
+              title="Currency"
+              description="Used everywhere amounts are shown. Stored on this device."
+              icon={Wallet}
+            >
+              <div className="grid gap-2 sm:grid-cols-2">
+                {CURRENCIES.map((c) => {
+                  const selected = currency === c.code;
+                  return (
+                    <button
+                      key={c.code}
+                      type="button"
+                      onClick={() => handleCurrencyChange(c.code)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl border-2 p-3 text-left transition-all duration-200",
+                        selected
+                          ? "border-primary bg-primary/5 shadow-sm"
+                          : "border-border/60 hover:border-border"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-semibold",
+                          selected ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {c.symbol}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-foreground">
+                          {c.label}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">{c.code}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                This changes the symbol only — existing amounts are not converted.
+              </p>
             </SettingsSection>
           </motion.div>
         </PremiumTabsContent>

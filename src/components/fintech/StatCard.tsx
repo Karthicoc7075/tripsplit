@@ -46,36 +46,64 @@ export function StatCard({
     accent: "bg-accent",
   }[variant];
 
+  // A clickable card is a real button: focusable, Enter/Space activated, and
+  // announced as a control. A bare <div onClick> is mouse-only.
+  const Root = onClick ? "button" : "div";
+
   return (
-    <div
-      onClick={onClick}
+    <Root
+      {...(onClick
+        ? { type: "button" as const, onClick, "aria-label": `${title}. ${subtitle ?? ""}`.trim() }
+        : {})}
       className={cn(
-        "fintech-card-hover p-4 sm:p-5 relative overflow-hidden min-w-0 h-full flex flex-col justify-between transition-all duration-200",
-        onClick && "cursor-pointer active:scale-[0.98] select-none hover:border-primary/40",
+        // `w-full` is load-bearing: form controls size to fit-content even with
+        // display:flex, so a clickable card would render narrower than its
+        // plain-<div> siblings in the same grid row.
+        "fintech-card-hover p-4 sm:p-5 relative overflow-hidden w-full min-w-0 h-full flex flex-col justify-between transition-all duration-200 text-left",
+        onClick &&
+          "cursor-pointer active:scale-[0.98] select-none hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         className
       )}
     >
       {accentBar && <div className={cn("absolute top-0 left-0 right-0 h-0.5", barColor)} />}
       <div>
         <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
-          <span className="text-xs sm:text-sm font-medium text-muted-foreground leading-tight">{title}</span>
+          <span className="min-w-0 flex-1 truncate text-xs font-medium leading-tight text-muted-foreground sm:text-sm">
+            {title}
+          </span>
           {Icon && <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground/70 shrink-0" />}
         </div>
-        <div className={cn("text-xl sm:text-2xl lg:text-3xl font-semibold tracking-tight truncate", valueColor)}>
+        <div
+          className={cn(
+            "text-xl font-semibold leading-tight tracking-tight tabular-nums break-words sm:text-2xl lg:text-[1.75rem]",
+            valueColor
+          )}
+        >
           <CountUp value={value} prefix={prefix} suffix={suffix} />
         </div>
       </div>
       {(subtitle || trend) && (
-        <div className="mt-2.5 flex items-center gap-2 shrink-0">
+        <div className="mt-2.5 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
           {trend && (
-            <span className={cn("text-xs font-medium flex items-center gap-0.5", trend.positive ? "text-success" : "text-destructive")}>
-              {trend.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            <span
+              className={cn(
+                "flex shrink-0 items-center gap-0.5 text-xs font-medium",
+                trend.positive ? "text-success" : "text-destructive"
+              )}
+            >
+              {trend.positive ? (
+                <TrendingUp className="h-3 w-3 shrink-0" />
+              ) : (
+                <TrendingDown className="h-3 w-3 shrink-0" />
+              )}
               {trend.value}
             </span>
           )}
-          {subtitle && <span className="text-xs text-muted-foreground">{subtitle}</span>}
+          {subtitle && (
+            <span className="min-w-0 text-xs leading-tight text-muted-foreground">{subtitle}</span>
+          )}
         </div>
       )}
-    </div>
+    </Root>
   );
 }

@@ -1,10 +1,12 @@
-import { useState, useCallback } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useMemo, useState, useCallback } from "react";
+import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
+import { getDashboardContext } from "@/lib/dashboardContext";
 import { useIncomingFriendAlerts } from "@/hooks/useIncomingFriendAlerts";
 import { useIncomingOutingAlerts } from "@/hooks/useIncomingOutingAlerts";
-import { Home, Users, Map, Settings, Search, LogOut, Plus, PieChart, Wallet, User } from "lucide-react";
+import { Home, Users, Map, Settings, Search, LogOut, Plus, PieChart, Wallet, User, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { GlobalSearch, useGlobalSearchShortcut } from "@/components/GlobalSearch";
 import { NotificationDropdown } from "@/components/NotificationDropdown";
+import { SyncStatus } from "@/components/SyncStatus";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
@@ -31,8 +34,20 @@ import flaticonImg from "@/assets/vite.png";
 
 export default function GlobalLayout() {
   const { user, signOut } = useAuth();
-  const { friends, outings, currentUserId } = useData();
+  const { friends, outings, transactions, currentUserId } = useData();
+
+  // A live or upcoming trip makes logging an expense the most likely reason for
+  // tapping (+), so it leads the menu. Planning counts too: advance bookings —
+  // tickets, hotel deposits — are spent before the trip starts.
+  const quickAddContext = useMemo(
+    () => getDashboardContext(outings, transactions),
+    [outings, transactions]
+  );
+  const quickAddOuting =
+    quickAddContext.mode === "home" ? null : quickAddContext.outing;
+  const quickAddLabel = "Add Transaction to";
   const navigate = useNavigate();
+  const location = useLocation();
 
   useIncomingFriendAlerts(friends, currentUserId);
   useIncomingOutingAlerts(outings, currentUserId);
@@ -61,9 +76,19 @@ export default function GlobalLayout() {
       <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="container mx-auto px-4 sm:px-6 h-16 flex items-center justify-between max-w-7xl">
           <div className="flex items-center gap-8">
-            <NavLink to="/dashboard" className="flex items-center">
-              <img src={flaticonImg} alt="TripSplit Logo" className="h-16 w-16 object-contain rounded-lg" />
-              <span className="text-lg font-bold ">
+            <NavLink
+              to="/dashboard"
+              className="flex shrink-0 items-center gap-1.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              {/* Header is h-16; the mark stays well inside it so it never
+                  touches the top border or the bottom divider. */}
+              <img
+                src={flaticonImg}
+                alt=""
+                aria-hidden
+                className="h-9 w-9 shrink-0 object-contain sm:h-10 sm:w-10"
+              />
+              <span className="whitespace-nowrap text-lg font-bold">
                 <span style={{ color: "#276ACF" }}>Trip</span><span style={{ color: "#3AA91F" }}>Split</span>
               </span>
             </NavLink>
@@ -96,18 +121,10 @@ export default function GlobalLayout() {
               <kbd className="hidden lg:inline text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded border border-border/60">⌘K</kbd>
             </button>
 
+            <SyncStatus className="shrink-0" />
+
             <Button variant="ghost" size="icon" className="md:hidden h-9 w-9" onClick={openSearch}>
               <Search className="h-4 w-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden h-9 w-9 text-primary"
-              onClick={() => setFabOpen(true)}
-              aria-label="Quick actions"
-            >
-              <Plus className="h-5 w-5" />
             </Button>
 
             <NotificationDropdown />
@@ -150,8 +167,27 @@ export default function GlobalLayout() {
       </header>
 
       <main className="flex-1 container mx-auto px-3 sm:px-6 py-5 sm:py-8 max-w-7xl min-w-0">
-        <Outlet />
+        <motion.div
+          key={location.pathname}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="min-w-0"
+        >
+          <Outlet />
+        </motion.div>
       </main>
+
+      {/* Floating action button — bottom-right, above the tab bar, inside thumb
+          reach. Mobile only; desktop has Quick Actions on the dashboard. */}
+      <button
+        type="button"
+        onClick={() => setFabOpen(true)}
+        aria-label="Quick actions"
+        className="md:hidden fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border/50 bg-background/95 backdrop-blur-xl">
         <div className="flex items-stretch h-16 px-1">
@@ -205,7 +241,22 @@ export default function GlobalLayout() {
             <DialogDescription>What would you like to do?</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 pt-2">
-            <Button className="justify-start gap-2 h-11" onClick={() => { setFabOpen(false); navigate("/outings"); }}>
+            {quickAddOuting && (
+              <Button
+                className="justify-start gap-2 h-11"
+                onClick={() => { setFabOpen(false); navigate(`/outings/${quickAddOuting.id}?add=1`); }}
+              >
+                <Receipt className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 truncate">
+                  {quickAddLabel} {quickAddOuting.name}
+                </span>
+              </Button>
+            )}
+            <Button
+              variant={quickAddOuting ? "outline" : "default"}
+              className="justify-start gap-2 h-11"
+              onClick={() => { setFabOpen(false); navigate("/outings"); }}
+            >
               <Map className="h-4 w-4" /> Create Outing
             </Button>
             <Button variant="outline" className="justify-start gap-2 h-11" onClick={() => { setFabOpen(false); navigate("/friends"); }}>

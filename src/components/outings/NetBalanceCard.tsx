@@ -1,5 +1,6 @@
 import { TrendingDown, TrendingUp, CheckCircle } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import { formatPayTo, formatReturnFrom } from "@/lib/displayNames";
 import type { PersonalSpendingAnalysis } from "@/lib/outingAnalysis";
 import { cn } from "@/lib/utils";
 
@@ -24,14 +25,14 @@ export function NetBalanceCard({ analysis }: NetBalanceCardProps) {
       )}
     >
       <p className="text-sm font-medium text-muted-foreground mb-2">
-        {isOwedByFriends ? "Your Balance" : "Settle amount"}
+        Net Balance
       </p>
 
       {isSettled ? (
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <CheckCircle className="h-5 w-5 text-muted-foreground" />
-            <p className="text-xl sm:text-2xl font-bold text-muted-foreground">₹0</p>
+            <p className="text-xl sm:text-2xl font-bold text-muted-foreground">{formatCurrency(0)}</p>
           </div>
           <p className="text-xs text-muted-foreground font-medium mt-1">All settled</p>
         </div>
@@ -44,10 +45,7 @@ export function NetBalanceCard({ analysis }: NetBalanceCardProps) {
             </p>
           </div>
           <p className="text-sm font-semibold text-destructive">
-            You owe {formatCurrency(Math.abs(netBalance))}
-          </p>
-          <p className="text-xs text-destructive/80">
-            Remaining to pay friends
+            {formatPayTo(Math.abs(netBalance))}
           </p>
         </div>
       ) : (
@@ -59,10 +57,7 @@ export function NetBalanceCard({ analysis }: NetBalanceCardProps) {
             </p>
           </div>
           <p className="text-sm font-semibold text-success">
-            {formatCurrency(netBalance)} remaining
-          </p>
-          <p className="text-xs text-success/80">
-            Still to get from friends
+            {formatReturnFrom(netBalance)}
           </p>
         </div>
       )}

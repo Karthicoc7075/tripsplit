@@ -101,6 +101,19 @@ function mapDocs<T extends { id: string }>(snap: { docs: { id: string; data: () 
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as T);
 }
 
+/**
+ * Ids of documents written locally but not yet acknowledged by the server.
+ *
+ * Kept beside the data rather than merged into it: these objects get written
+ * straight back to Firestore, so a client-only flag on them would end up
+ * persisted.
+ */
+function pendingIdsFrom(snap: {
+  docs: { id: string; metadata?: { hasPendingWrites?: boolean } }[];
+}): string[] {
+  return snap.docs.filter((d) => d.metadata?.hasPendingWrites).map((d) => d.id);
+}
+
 /** Firestore rejects `undefined` field values — omit those keys before writes. */
 function stripUndefined<T extends Record<string, unknown>>(data: T): T {
   return Object.fromEntries(
@@ -323,17 +336,32 @@ function subscribeToFriends(
 
 // ─── Real-time subscription (top-level collections with array-contains) ──────
 
+export interface SubscriptionMeta {
+  /** Document ids still queued locally — used for the "waiting to sync" badges. */
+  pendingIds: Set<string>;
+}
+
 export function subscribeToUserData(
   uid: string,
-  onData: (data: AppData) => void,
+  onData: (data: AppData, meta: SubscriptionMeta) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
   const state: AppData = { ...EMPTY_DATA };
   const ready = { friends: false, outings: false, transactions: false, settlements: false };
+  const pending = { outings: [] as string[], transactions: [] as string[], settlements: [] as string[] };
 
   const emit = () => {
     if (ready.friends && ready.outings && ready.transactions && ready.settlements) {
-      onData({ ...state });
+      onData(
+        { ...state },
+        {
+          pendingIds: new Set([
+            ...pending.outings,
+            ...pending.transactions,
+            ...pending.settlements,
+          ]),
+        }
+      );
     }
   };
 
@@ -355,8 +383,10 @@ export function subscribeToUserData(
   const outingsQuery = query(outingsRef(), where("memberIds", "array-contains", uid));
   const unsubOutings = onSnapshot(
     outingsQuery,
+    { includeMetadataChanges: true },
     (snap) => {
       state.outings = mapDocs<Outing>(snap);
+      pending.outings = pendingIdsFrom(snap);
       ready.outings = true;
       emit();
     },
@@ -367,8 +397,10 @@ export function subscribeToUserData(
   const txQuery = query(transactionsRef(), where("memberIds", "array-contains", uid));
   const unsubTransactions = onSnapshot(
     txQuery,
+    { includeMetadataChanges: true },
     (snap) => {
       state.transactions = mapDocs<Transaction>(snap);
+      pending.transactions = pendingIdsFrom(snap);
       ready.transactions = true;
       emit();
     },
@@ -379,8 +411,10 @@ export function subscribeToUserData(
   const settleQuery = query(settlementsRef(), where("memberIds", "array-contains", uid));
   const unsubSettlements = onSnapshot(
     settleQuery,
+    { includeMetadataChanges: true },
     (snap) => {
       state.settlementRecords = mapDocs<SettlementRecord>(snap);
+      pending.settlements = pendingIdsFrom(snap);
       ready.settlements = true;
       emit();
     },
@@ -463,19 +497,55 @@ export async function deleteSettlementsForOuting(outingId: string): Promise<void
 
 // ─── Replace all user data (undo/import) ─────────────────────────────────────
 
+/**
+ * Restores a previous snapshot (the Undo stack).
+ *
+ * Deletions are deliberately narrow. This used to remove **every** outing,
+ * transaction and settlement the user was a member of before rewriting the
+ * snapshot — so pressing Undo silently destroyed expenses other members had
+ * added since, across every shared outing. It also cannot work under the
+ * security rules, which only permit deleting documents you created or own.
+ *
+ * Now it removes only documents this user is entitled to delete *and* that the
+ * snapshot no longer contains, then re-writes the snapshot over the rest.
+ */
 export async function replaceAllUserData(uid: string, data: AppData): Promise<void> {
-  // Delete existing docs where user is a member
   const [outingsSnap, txSnap, settleSnap] = await Promise.all([
     getDocs(query(outingsRef(), where("memberIds", "array-contains", uid))),
     getDocs(query(transactionsRef(), where("memberIds", "array-contains", uid))),
     getDocs(query(settlementsRef(), where("memberIds", "array-contains", uid))),
   ]);
 
+  const keepOutings = new Set(data.outings.map((o) => o.id));
+  const keepTx = new Set(data.transactions.map((t) => t.id));
+  const keepSettle = new Set(data.settlementRecords.map((r) => r.id));
+
+  // Outings this user created, by id — the rules allow deleting a member's
+  // transaction only when you also own the outing it belongs to.
+  const ownedOutingIds = new Set(
+    outingsSnap.docs
+      .filter((d) => (d.data() as { createdById?: string }).createdById === uid)
+      .map((d) => d.id)
+  );
+
+  const canDeleteChild = (docData: { outingId?: string; createdById?: string; recordedById?: string }) =>
+    docData.createdById === uid ||
+    docData.recordedById === uid ||
+    (docData.outingId != null && ownedOutingIds.has(docData.outingId));
+
   const batch = writeBatch(db);
 
-  outingsSnap.docs.forEach((d) => batch.delete(d.ref));
-  txSnap.docs.forEach((d) => batch.delete(d.ref));
-  settleSnap.docs.forEach((d) => batch.delete(d.ref));
+  outingsSnap.docs
+    .filter((d) => !keepOutings.has(d.id) && ownedOutingIds.has(d.id))
+    .forEach((d) => batch.delete(d.ref));
+
+  txSnap.docs
+    .filter((d) => !keepTx.has(d.id) && canDeleteChild(d.data() as never))
+    .forEach((d) => batch.delete(d.ref));
+
+  settleSnap.docs
+    .filter((d) => !keepSettle.has(d.id) && canDeleteChild(d.data() as never))
+    .forEach((d) => batch.delete(d.ref));
 
   for (const outing of data.outings) {
     const { id, ...rest } = outing;
@@ -592,8 +662,37 @@ export async function restoreOutingFromBackupRecord(
   const outingMemberIds = getOutingMemberIds(outing);
 
   await saveOuting(outing);
-  await deleteTransactionsForOuting(outing.id);
-  await deleteSettlementsForOuting(outing.id);
+
+  // Only clear documents this user is entitled to delete. The rules let you
+  // delete a transaction you created, or any transaction in an outing you own —
+  // so a non-owner restoring their own backup rewrites their own entries and
+  // leaves other members' alone, rather than failing half-way through.
+  const keepTx = new Set(transactions.map((t) => t.id));
+  const keepSettle = new Set(settlements.map((r) => r.id));
+  const ownsOuting = (outing.createdById ?? uid) === uid;
+
+  const [existingTx, existingSettle] = await Promise.all([
+    getDocs(query(transactionsRef(), where("outingId", "==", outing.id))),
+    getDocs(query(settlementsRef(), where("outingId", "==", outing.id))),
+  ]);
+
+  await Promise.all([
+    ...existingTx.docs
+      .filter(
+        (d) =>
+          !keepTx.has(d.id) &&
+          (ownsOuting || (d.data() as { createdById?: string }).createdById === uid)
+      )
+      .map((d) => deleteDoc(d.ref)),
+    ...existingSettle.docs
+      .filter(
+        (d) =>
+          !keepSettle.has(d.id) &&
+          (ownsOuting || (d.data() as { recordedById?: string }).recordedById === uid)
+      )
+      .map((d) => deleteDoc(d.ref)),
+  ]);
+
   await Promise.all(transactions.map((tx) => saveTransaction(tx, outingMemberIds)));
   await Promise.all(settlements.map((r) => saveSettlementRecord(r, outingMemberIds)));
 }

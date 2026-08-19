@@ -10,6 +10,7 @@ import type {
   Outing,
   SplitMode,
 } from "@/types";
+import { getOutingMembers } from "@/lib/members";
 
 /**
  * Balance calculation strategy:
@@ -133,6 +134,16 @@ export function simplifyDebts(balances: MemberBalance[]): DebtEdge[] {
   return edges;
 }
 
+/**
+ * An outing still carrying live money. Planned outings count too: a trip that
+ * has not started can already hold real expenses (advance bookings, deposits,
+ * tickets), and that money is genuinely owed. Only `settled` outings — which
+ * the user explicitly closed — are left out of balances.
+ */
+export function isOpenOuting(outing: Outing): boolean {
+  return outing.status !== "settled";
+}
+
 export function computeGlobalSettlements(
   outings: Outing[],
   allTransactions: Transaction[],
@@ -141,10 +152,14 @@ export function computeGlobalSettlements(
 ): Settlement[] {
   const settlements: Settlement[] = [];
 
-  for (const outing of outings) {
+  // Settled outings are closed by an explicit user action, so they drop out of
+  // live debts here exactly as they do in computeDashboardStats. Without this
+  // the Dashboard said "all settled" while Friends still listed the debt.
+  for (const outing of outings.filter(isOpenOuting)) {
     const txs = allTransactions.filter((t) => t.outingId === outing.id);
     const records = allSettlementRecords.filter((r) => r.outingId === outing.id);
-    const balances = computeMemberBalances(outing.members, txs, records);
+    const members = getOutingMembers(outing);
+    const balances = computeMemberBalances(members, txs, records);
     const edges = simplifyDebts(balances);
 
     for (const edge of edges) {
@@ -177,12 +192,13 @@ export function computeFriendBalances(
   const friendBalances = new Map<string, number>();
   friends.forEach((f) => friendBalances.set(f.id, 0));
 
-  for (const outing of outings) {
+  for (const outing of outings.filter(isOpenOuting)) {
     const txs = allTransactions.filter((t) => t.outingId === outing.id);
     const records = allSettlementRecords.filter((r) => r.outingId === outing.id);
-    const balances = computeMemberBalances(outing.members, txs, records);
+    const members = getOutingMembers(outing);
+    const balances = computeMemberBalances(members, txs, records);
 
-    for (const member of outing.members) {
+    for (const member of members) {
       if (member.id === currentUserId) continue;
       const friend = friends.find(
         (f) => f.id === member.id || f.name.toLowerCase() === member.name.toLowerCase()
@@ -226,10 +242,10 @@ export function computeDashboardStats(
   const oweSet = new Set<string>();
   const owedSet = new Set<string>();
 
-  for (const outing of outings.filter((o) => o.status === "ongoing")) {
+  for (const outing of outings.filter(isOpenOuting)) {
     const txs = allTransactions.filter((t) => t.outingId === outing.id);
     const records = allSettlementRecords.filter((r) => r.outingId === outing.id);
-    const balances = computeMemberBalances(outing.members, txs, records);
+    const balances = computeMemberBalances(getOutingMembers(outing), txs, records);
     const userBal = balances.find((b) => b.memberId === currentUserId)?.balance ?? 0;
 
     if (userBal < 0) {
@@ -247,8 +263,102 @@ export function computeDashboardStats(
     totalBalance: Math.round((youAreOwed - youOwe) * 100) / 100,
     youOwe: Math.round(youOwe * 100) / 100,
     youAreOwed: Math.round(youAreOwed * 100) / 100,
+    // Card label is "Currently ongoing", so this stays ongoing-only.
     activeOutings: outings.filter((o) => o.status === "ongoing").length,
     oweCount: oweSet.size,
     owedCount: owedSet.size,
+  };
+}
+export interface TransactionAllocation {
+  transactionId: string;
+  title: string;
+  date: Date;
+  /** What this member owed on this transaction alone (share − what they paid). */
+  owed: number;
+  /** How much of their settlements has been applied here. */
+  covered: number;
+  /** Still outstanding on this transaction. */
+  remaining: number;
+  status: "settled" | "partial" | "open";
+}
+
+export interface SettlementAllocation {
+  /** Total the member owed across all transactions. */
+  totalOwed: number;
+  /** Total they have settled outward, net of anything returned to them. */
+  totalPaid: number;
+  /** Left to pay. */
+  totalRemaining: number;
+  /** Oldest first — the order the money was applied in. */
+  transactions: TransactionAllocation[];
+}
+
+/**
+ * Spreads a member's settlements across the transactions they owe on,
+ * **oldest first**.
+ *
+ * Balances alone answer "how much is left" but never "which expenses are
+ * cleared". Pay back 60% and this shows the earliest expenses fully settled,
+ * one partially covered, and the rest untouched — the way people actually
+ * reason about paying a tab down.
+ *
+ * Purely derived: no schema change, and settlements stay a single net figure.
+ */
+export function allocateSettlements(
+  memberId: string,
+  transactions: Transaction[],
+  settlementRecords: SettlementRecord[],
+  getDate: (tx: Transaction) => Date = (tx) => new Date(tx.createdAt)
+): SettlementAllocation {
+  const round = (n: number) => Math.round(n * 100) / 100;
+
+  const owedRows = transactions
+    .map((tx) => {
+      const payments = tx.payments?.length
+        ? tx.payments
+        : [{ memberId: tx.paidById, amount: tx.amount }];
+      const paid = payments
+        .filter((p) => p.memberId === memberId)
+        .reduce((sum, p) => sum + p.amount, 0);
+      const share = tx.splits.find((s) => s.memberId === memberId)?.amount ?? 0;
+
+      return { tx, owed: round(share - paid), date: getDate(tx) };
+    })
+    // Only transactions this member is actually behind on can be settled.
+    .filter((row) => row.owed > 0.01)
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  let pool = round(
+    settlementRecords.reduce((sum, r) => {
+      if (r.fromId === memberId) return sum + r.amount;
+      if (r.toId === memberId) return sum - r.amount;
+      return sum;
+    }, 0)
+  );
+  const totalPaid = Math.max(pool, 0);
+
+  const rows: TransactionAllocation[] = owedRows.map(({ tx, owed, date }) => {
+    const covered = pool > 0 ? round(Math.min(pool, owed)) : 0;
+    pool = round(pool - covered);
+    const remaining = round(owed - covered);
+
+    return {
+      transactionId: tx.id,
+      title: tx.title,
+      date,
+      owed,
+      covered,
+      remaining,
+      status: remaining <= 0.01 ? "settled" : covered > 0.01 ? "partial" : "open",
+    };
+  });
+
+  const totalOwed = round(rows.reduce((sum, r) => sum + r.owed, 0));
+
+  return {
+    totalOwed,
+    totalPaid: round(Math.min(totalPaid, totalOwed)),
+    totalRemaining: round(rows.reduce((sum, r) => sum + r.remaining, 0)),
+    transactions: rows,
   };
 }

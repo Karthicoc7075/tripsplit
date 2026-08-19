@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, RefreshCw, Wallet, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,21 +10,91 @@ import { EmptyState } from "@/components/EmptyState";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PageHeader } from "@/components/fintech/PageHeader";
 import { StatCard } from "@/components/fintech/StatCard";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, getCurrencySymbol } from "@/lib/format";
 import { getFirstName, possessiveLabel, memberLabel } from "@/lib/displayNames";
+import { DataErrorState } from "@/components/DataErrorState";
 
 export default function SettleUp() {
-  const { globalSettlements, currentUserId, currentUserName, dashboardStats } = useData();
+  const {
+    globalSettlements, currentUserId, currentUserName, dashboardStats, error, retry,
+    recordSettlement, undoLastAction, loading,
+  } = useData();
+  const navigate = useNavigate();
   const firstName = getFirstName(currentUserName);
   const [settleId, setSettleId] = useState<string | null>(null);
 
+  const pending = useMemo(
+    () => globalSettlements.find((s) => s.id === settleId) ?? null,
+    [globalSettlements, settleId]
+  );
+
   const handleSettle = () => {
-    toast.success("Settlement recorded successfully!");
-    setSettleId(null);
+    if (!pending || !pending.outingId) {
+      toast.error("Couldn't find that outing — open it and settle from there.");
+      setSettleId(null);
+      return;
+    }
+
+    // A debt edge points from payer to receiver. "settle" means the current
+    // user paid out; "return" means they were paid back.
+    const iAmPaying = pending.fromId === currentUserId;
+    const friendId = iAmPaying ? pending.toId : pending.fromId;
+    const friendName = iAmPaying ? pending.toName : pending.fromName;
+
+    try {
+      recordSettlement({
+        outingId: pending.outingId,
+        friendId,
+        friendName,
+        amount: pending.amount,
+        type: iAmPaying ? "settle" : "return",
+      });
+      toast.success(
+        `${formatCurrency(pending.amount)} settled with ${getFirstName(friendName)}`,
+        {
+          description: pending.outingName,
+          action: { label: "Undo", onClick: () => undoLastAction() },
+        }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not record settlement");
+    } finally {
+      setSettleId(null);
+    }
   };
 
   const youOweSettlements = globalSettlements.filter((s) => s.fromId === currentUserId);
   const owedToYou = globalSettlements.filter((s) => s.toId === currentUserId);
+
+  if (error) {
+    return (
+      <div className="space-y-6 pb-6">
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+          Settle Up
+        </h1>
+        <DataErrorState message={error} onRetry={retry} />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-6 pb-6">
+        <div className="h-10 w-40 animate-pulse rounded-lg bg-muted/40" />
+        <div className="h-4 w-72 animate-pulse rounded-md bg-muted/30" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="fintech-card h-28 animate-pulse bg-muted/20" />
+          ))}
+        </div>
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <div key={i} className="fintech-card h-40 animate-pulse bg-muted/20" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 sm:space-y-8 pb-6 min-w-0">
@@ -31,9 +102,10 @@ export default function SettleUp() {
         title="Settle Up"
         description={`Review and simplify ${possessiveLabel(currentUserName).toLowerCase()} debts across all outings.`}
         actions={
-          <Button variant="outline" size="sm" className="gap-2">
-            <RefreshCw size={16} /> Simplify Debts
-          </Button>
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-card px-2.5 py-1.5 text-xs text-muted-foreground">
+            <RefreshCw size={14} className="shrink-0" />
+            Debts already simplified
+          </span>
         }
       />
 
@@ -41,12 +113,12 @@ export default function SettleUp() {
         <StatCard
           title="Net Position"
           value={Math.abs(dashboardStats.totalBalance)}
-          prefix={dashboardStats.totalBalance >= 0 ? "+₹" : "-₹"}
+          prefix={`${dashboardStats.totalBalance >= 0 ? "+" : "-"}${getCurrencySymbol()}`}
           variant={dashboardStats.totalBalance >= 0 ? "success" : "destructive"}
           subtitle="Overall balance"
         />
-        <StatCard title={`${firstName} Owes`} value={dashboardStats.youOwe} prefix="₹" variant="destructive" subtitle={`${youOweSettlements.length} settlements`} />
-        <StatCard title={`${firstName} is Owed`} value={dashboardStats.youAreOwed} prefix="₹" variant="success" subtitle={`${owedToYou.length} settlements`} />
+        <StatCard title={`${firstName} Owes`} value={dashboardStats.youOwe} prefix={getCurrencySymbol()} variant="destructive" subtitle={`${youOweSettlements.length} settlements`} />
+        <StatCard title={`${firstName} is Owed`} value={dashboardStats.youAreOwed} prefix={getCurrencySymbol()} variant="success" subtitle={`${owedToYou.length} settlements`} />
       </div>
 
       {globalSettlements.length === 0 ? (
@@ -54,6 +126,8 @@ export default function SettleUp() {
           icon={Wallet}
           title="All settled up!"
           description="You have no outstanding debts across your outings."
+          actionLabel="View outings"
+          onAction={() => navigate("/outings")}
         />
       ) : (
         <div className="space-y-6">
@@ -91,11 +165,16 @@ export default function SettleUp() {
                       </div>
                     </div>
 
-                    {settlement.fromId === currentUserId && (
-                      <Button className="w-full gap-2" onClick={() => setSettleId(settlement.id)}>
-                        <CheckCircle2 size={16} /> Mark as Settled
-                      </Button>
-                    )}
+                    <Button
+                      className="w-full gap-2"
+                      variant={settlement.fromId === currentUserId ? "default" : "outline"}
+                      onClick={() => setSettleId(settlement.id)}
+                    >
+                      <CheckCircle2 size={16} />
+                      {settlement.fromId === currentUserId
+                        ? "Mark as Paid"
+                        : "Mark as Received"}
+                    </Button>
                   </div>
                 </motion.div>
               ))}
@@ -107,8 +186,16 @@ export default function SettleUp() {
       <ConfirmDialog
         open={!!settleId}
         onOpenChange={(o) => !o && setSettleId(null)}
-        title="Confirm settlement?"
-        description="This will record that you've paid this debt. Your balances will be updated."
+        title={
+          pending?.fromId === currentUserId ? "Confirm payment?" : "Confirm you were paid?"
+        }
+        description={
+          pending
+            ? pending.fromId === currentUserId
+              ? `Records that you paid ${getFirstName(pending.toName)} ${formatCurrency(pending.amount)} for ${pending.outingName}. Balances update for everyone in that outing.`
+              : `Records that ${getFirstName(pending.fromName)} paid you ${formatCurrency(pending.amount)} for ${pending.outingName}. Balances update for everyone in that outing.`
+            : ""
+        }
         confirmLabel="Confirm Settlement"
         variant="default"
         onConfirm={handleSettle}

@@ -1,3 +1,4 @@
+import { formatCurrency } from "@/lib/format";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Map, Users, Receipt } from "lucide-react";
@@ -85,7 +86,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
           id: t.id,
           type: "transaction" as const,
           title: t.title,
-          subtitle: `${outing.name} · ₹${t.amount.toLocaleString("en-IN")}`,
+          subtitle: `${outing.name} · ${formatCurrency(t.amount)}`,
           path: `/outings/${t.outingId}?tx=${t.id}`,
         };
       });

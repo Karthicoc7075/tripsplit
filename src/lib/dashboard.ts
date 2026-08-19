@@ -1,13 +1,31 @@
-import type { Transaction, Outing } from "@/types";
+import type { SettlementRecord, Transaction, Outing } from "@/types";
 import type { ActivityItem } from "@/components/dashboard/ActivityFeed";
-import { formatRelativeTime } from "@/lib/format";
-import { memberLabel } from "@/lib/displayNames";
+import { formatCurrency, formatRelativeTime } from "@/lib/format";
+import { getFirstName, memberLabel } from "@/lib/displayNames";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function getUserShare(tx: Transaction, userId: string): number {
   const split = tx.splits.find((s) => s.memberId === userId);
   return split?.amount ?? 0;
+}
+
+/**
+ * The day the money was actually spent.
+ *
+ * `tx.date` is the expense date the user picked ("5 Aug 2026"); `tx.createdAt`
+ * is only when the record was typed into the app. Charting by `createdAt` drops
+ * a trip expense on the day it was logged rather than the day it happened —
+ * log a week of Goa receipts tonight and the whole trip spikes on today.
+ *
+ * Falls back to `createdAt` when `date` is missing or unparseable (older records).
+ */
+export function getTransactionDate(tx: Transaction): Date {
+  if (tx.date) {
+    const parsed = new Date(tx.date);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(tx.createdAt);
 }
 
 function isCurrentMonth(date: Date): boolean {
@@ -23,7 +41,7 @@ function isPreviousMonth(date: Date): boolean {
 
 export function getThisMonthSpent(transactions: Transaction[], userId: string): number {
   return transactions
-    .filter((tx) => isCurrentMonth(new Date(tx.createdAt)))
+    .filter((tx) => isCurrentMonth(getTransactionDate(tx)))
     .reduce((sum, tx) => sum + getUserShare(tx, userId), 0);
 }
 
@@ -33,7 +51,7 @@ export function getMonthOverMonthTrend(
 ): { value: string; positive: boolean } | undefined {
   const thisMonth = getThisMonthSpent(transactions, userId);
   const lastMonth = transactions
-    .filter((tx) => isPreviousMonth(new Date(tx.createdAt)))
+    .filter((tx) => isPreviousMonth(getTransactionDate(tx)))
     .reduce((sum, tx) => sum + getUserShare(tx, userId), 0);
 
   if (lastMonth === 0) return undefined;
@@ -78,7 +96,7 @@ export function getSpendingTrend(transactions: Transaction[], userId: string, mo
   }
 
   for (const tx of transactions) {
-    const d = new Date(tx.createdAt);
+    const d = getTransactionDate(tx);
     const bucket = buckets.find(
       (b) => b.year === d.getFullYear() && b.monthIdx === d.getMonth()
     );
@@ -99,18 +117,60 @@ export function getTransactionsForOutings(
   return transactions.filter((tx) => outingIds.has(tx.outingId));
 }
 
+/**
+ * Money moving back is as much "activity" as money going out — a settlement is
+ * often the item people most want to see. Merged into the same feed, newest
+ * first, which is also what finally uses the `settled` type the feed declares.
+ */
+type DatedActivityItem = ActivityItem & { at: number };
+
+function buildSettlementActivity(
+  records: SettlementRecord[],
+  outings: Outing[],
+  userId: string
+): DatedActivityItem[] {
+  const outingMap = new Map(outings.map((o) => [o.id, o]));
+
+  return records
+    .filter((r) => outingMap.has(r.outingId))
+    .map((r) => {
+      const amount = formatCurrency(r.amount);
+      const from = getFirstName(r.fromName);
+      const to = getFirstName(r.toName);
+
+      let text: string;
+      if (r.fromId === userId) {
+        text = `You paid ${to} ${amount}`;
+      } else if (r.toId === userId) {
+        text = `${from} paid you ${amount}`;
+      } else {
+        text = `${from} paid ${to} ${amount}`;
+      }
+
+      const outing = outingMap.get(r.outingId);
+      if (outing) text += ` in ${outing.name}`;
+
+      return {
+        id: r.id,
+        text,
+        time: formatRelativeTime(r.createdAt),
+        type: "settled" as const,
+        at: new Date(r.createdAt).getTime(),
+      };
+    });
+}
+
 export function getRecentActivity(
   transactions: Transaction[],
   outings: Outing[],
   userId: string,
   userName: string,
-  limit = 5
+  limit = 5,
+  settlementRecords: SettlementRecord[] = []
 ): ActivityItem[] {
   const outingMap = new Map(outings.map((o) => [o.id, o]));
 
-  return getTransactionsForOutings(transactions, outings)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, limit)
+  const expenseItems: DatedActivityItem[] = getTransactionsForOutings(transactions, outings)
     .map((tx) => {
       const outing = outingMap.get(tx.outingId);
       
@@ -145,7 +205,7 @@ export function getRecentActivity(
 
       const type: ActivityItem["type"] = "paid";
 
-      let text = `${payerText} paid ₹${tx.amount.toLocaleString("en-IN")} for '${tx.title}'`;
+      let text = `${payerText} paid ${formatCurrency(tx.amount)} for '${tx.title}'`;
       if (outing) {
         text += ` in ${outing.name}`;
       }
@@ -155,6 +215,12 @@ export function getRecentActivity(
         text,
         time: formatRelativeTime(tx.createdAt),
         type,
+        at: new Date(tx.createdAt).getTime(),
       };
     });
+
+  return [...expenseItems, ...buildSettlementActivity(settlementRecords, outings, userId)]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, limit)
+    .map(({ at: _at, ...item }) => item);
 }

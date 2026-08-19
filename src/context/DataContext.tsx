@@ -24,7 +24,7 @@ import type {
 } from "@/types";
 import { getTransactionsForOutings } from "@/lib/dashboard";
 import { deriveOutingStatus, formatOutingDates, getMyOutings } from "@/lib/outing";
-import { canUserModifyTransaction } from "@/lib/permissions";
+import { canUserEditTransaction, canUserDeleteTransaction } from "@/lib/permissions";
 import { getOutingMemberIds, getOutingMembers, getRemovedMemberIds } from "@/lib/members";
 import {
   computeSplits,
@@ -69,6 +69,16 @@ interface DataContextType {
   friends: Friend[];
   transactions: Transaction[];
   loading: boolean;
+  /** Non-null when the Firestore subscription failed; pages show a retry state. */
+  error: string | null;
+  retry: () => void;
+  /** False while the browser reports no connection; writes are queued locally. */
+  isOnline: boolean;
+  /** Document ids written locally but not yet acknowledged by the server. */
+  pendingIds: Set<string>;
+  pendingCount: number;
+  /** ISO timestamp of the last successful snapshot — the sync dot's tooltip. */
+  lastSyncedAt: string | null;
   currentUserId: string;
   currentUserName: string;
   dashboardStats: DashboardStats;
@@ -81,7 +91,7 @@ interface DataContextType {
   getOutingTotalSpent: (outingId: string) => number;
   getOutingYourShare: (outingId: string) => number;
   createOuting: (input: CreateOutingInput) => Outing;
-  updateOuting: (id: string, updates: Partial<Pick<Outing, "name" | "category" | "date" | "description" | "status" | "location" | "budget" | "startDate" | "endDate" | "members" | "customCategories">>) => void;
+  updateOuting: (id: string, updates: Partial<Pick<Outing, "name" | "category" | "date" | "description" | "status" | "location" | "budget" | "startDate" | "endDate" | "members" | "customCategories" | "pinned" | "note" | "tags" | "archived">>) => void;
   updateOutingMembers: (outingId: string, members: OutingMember[]) => { recalculatedCount: number; needsReviewCount: number };
   /** Creator: full delete. Member: leave outing from own account only. */
   deleteOuting: (id: string) => "deleted" | "left" | null;
@@ -147,6 +157,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine
+  );
+
+  // Offline writes are queued by Firestore's persistent cache, so the UI needs
+  // to say "queued", not "saved", while the connection is down.
+  useEffect(() => {
+    const online = () => setIsOnline(true);
+    const offline = () => setIsOnline(false);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
+    };
+  }, []);
+  // Bumping this re-runs the subscription effect, which is the retry.
+  const [retryToken, setRetryToken] = useState(0);
+  const retry = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    setRetryToken((t) => t + 1);
+  }, []);
   const [undoStack, setUndoStack] = useState<AppData[]>([]);
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -193,10 +229,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!user) {
       setData(EMPTY_DATA);
       setLoading(false);
+      setError(null);
       return;
     }
 
     setLoading(true);
+    setError(null);
 
     ensureUserProfile(user.uid, {
       name: user.displayName ?? user.email?.split("@")[0] ?? "User",
@@ -205,7 +243,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = subscribeToUserData(
       user.uid,
-      (firestoreData) => {
+      (firestoreData, meta) => {
+        setPendingIds(meta.pendingIds);
         setData({
           ...firestoreData,
           transactions: normalizeTransactions(
@@ -215,15 +254,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ),
         });
         setLoading(false);
+        setError(null);
+        setLastSyncedAt(new Date().toISOString());
       },
-      (error) => {
-        console.error("Firestore subscription error:", error);
+      (err) => {
+        console.error("Firestore subscription error:", err);
+        setError(
+          err.message ||
+            "Could not reach the server. Check your connection and try again."
+        );
         setLoading(false);
       }
     );
 
     return unsubscribe;
-  }, [user, authLoading, currentUserName]);
+  }, [user, authLoading, currentUserName, retryToken]);
 
   const pushUndo = useCallback((prev: AppData) => {
     setUndoStack((s) => [...s.slice(-4), prev]);
@@ -310,22 +355,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       pushUndo(data);
       // Single write — no sync needed
-      saveOuting(draft)
-        .then(() => {
-          const memberIds = getOutingMemberIds(draft);
-          return Promise.all(
-            memberIds.map((mId) =>
-              forceBackupOuting(
-                mId,
-                draft.id,
-                getBackupData,
-                currentUserName,
-                buildOutingBackup(draft, [], [], currentUserName)
-              )
-            )
-          );
-        })
-        .catch(console.error);
+      saveOuting(draft).catch(console.error);
+      // Only this user's backup. Each member's snapshot lives under their own
+      // uid and only they may write it, so the previous fan-out across every
+      // member was rejected by the rules and silently swallowed.
+      forceBackupOuting(
+        currentUserId,
+        draft.id,
+        getBackupData,
+        currentUserName,
+        buildOutingBackup(draft, [], [], currentUserName)
+      ).catch(console.error);
 
       return draft;
     },
@@ -333,7 +373,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 
   const updateOuting = useCallback(
-    (id: string, updates: Partial<Pick<Outing, "name" | "category" | "date" | "description" | "status" | "location" | "budget" | "startDate" | "endDate" | "members" | "customCategories">>) => {
+    (id: string, updates: Partial<Pick<Outing, "name" | "category" | "date" | "description" | "status" | "location" | "budget" | "startDate" | "endDate" | "members" | "customCategories" | "pinned" | "note" | "tags" | "archived">>) => {
       if (!currentUserId) return;
 
       const outing = data.outings.find((o) => o.id === id);
@@ -364,9 +404,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         endDate: merged.endDate,
         members: merged.members,
         customCategories: merged.customCategories,
-      }, memberIds)
-        .then(() => scheduleBackup(id))
-        .catch(console.error);
+        pinned: merged.pinned,
+        note: merged.note,
+        tags: merged.tags,
+        archived: merged.archived,
+      }, memberIds).catch(console.error);
+      scheduleBackup(id);
     },
     [currentUserId, data, pushUndo, scheduleBackup]
   );
@@ -441,10 +484,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       pushUndo(data);
 
       if (isCreator) {
-        // Creator deletes: remove the single outing doc + all related data
-        deleteOutingDoc(id).catch(console.error);
-        deleteTransactionsForOuting(id).catch(console.error);
-        deleteSettlementsForOuting(id).catch(console.error);
+        // Children first, parent last: the rules authorise deleting another
+        // member's transaction by reading the outing's createdById, so the
+        // outing doc must still exist while those deletes are evaluated.
+        Promise.all([
+          deleteTransactionsForOuting(id),
+          deleteSettlementsForOuting(id),
+        ])
+          .then(() => deleteOutingDoc(id))
+          .catch(console.error);
         return "deleted";
       }
 
@@ -523,9 +571,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       pushUndo(data);
       // Single write — no sync needed
-      saveSettlementRecord(record, memberIds)
-        .then(() => scheduleBackup(input.outingId))
-        .catch(console.error);
+      saveSettlementRecord(record, memberIds).catch(console.error);
+      scheduleBackup(input.outingId);
       return record;
     },
     [currentUserId, currentUserName, data, pushUndo, scheduleBackup]
@@ -591,9 +638,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       pushUndo(data);
       // Single write — no sync needed
-      saveTransaction(tx, memberIds)
-        .then(() => scheduleBackup(txData.outingId))
-        .catch(console.error);
+      // Fired now, not in .then(): a Firestore write promise only settles on
+      // server ack, so offline it never resolves and the backup was skipped.
+      // The backup write queues offline exactly like the transaction does.
+      saveTransaction(tx, memberIds).catch(console.error);
+      scheduleBackup(txData.outingId);
       return tx;
     },
     [data.outings, currentUserId, currentUserName, data, pushUndo, scheduleBackup]
@@ -607,7 +656,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!tx) return;
 
       const outing = data.outings.find((o) => o.id === tx.outingId);
-      if (!outing || !canUserModifyTransaction(tx, currentUserId, outing)) return;
+      if (!outing || !canUserEditTransaction(tx, currentUserId, outing)) return;
 
       const updated = { ...tx, ...updates };
       if (updates.payments?.length) {
@@ -635,9 +684,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         receiptUrl: updated.receiptUrl,
         category: updated.category,
         date: updated.date,
-      })
-        .then(() => scheduleBackup(tx.outingId))
-        .catch(console.error);
+      }).catch(console.error);
+      scheduleBackup(tx.outingId);
     },
     [currentUserId, data, pushUndo, scheduleBackup]
   );
@@ -650,13 +698,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!tx) return;
 
       const outing = data.outings.find((o) => o.id === tx.outingId);
-      if (!outing || !canUserModifyTransaction(tx, currentUserId, outing)) return;
+      if (!outing || !canUserDeleteTransaction(tx, currentUserId, outing)) return;
 
       pushUndo(data);
       // Single write — no sync needed
-      deleteTransactionDoc(id)
-        .then(() => scheduleBackup(tx.outingId))
-        .catch(console.error);
+      deleteTransactionDoc(id).catch(console.error);
+      scheduleBackup(tx.outingId);
     },
     [currentUserId, data, pushUndo, scheduleBackup]
   );
@@ -761,6 +808,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     transactions: data.transactions,
     settlementRecords: data.settlementRecords,
     loading,
+    error,
+    retry,
+    isOnline,
+    lastSyncedAt,
+    pendingIds,
+    pendingCount: pendingIds.size,
     currentUserId,
     currentUserName,
     dashboardStats,

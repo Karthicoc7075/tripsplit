@@ -155,8 +155,7 @@ export function AddFriendModal({
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Avatar className="h-10 w-10 border border-border/60">
-                      <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                        {user.name.charAt(0)}
+                      <AvatarFallback seed={user.id} className="bg-primary/10 text-primary font-semibold">{user.name.charAt(0)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">

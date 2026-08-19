@@ -1,18 +1,19 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { motion } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
+import { toast } from "sonner";
 import {
-  Map, Users, Receipt, Plus, UserPlus,
-  Activity, CreditCard, Scale,
+  Map, Receipt, Plus, UserPlus, Wallet,
+  CreditCard, Scale, ArrowDownLeft, ArrowUpRight,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from "recharts";
 import { Label } from "@/components/ui/label";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatCompact, getCurrencySymbol } from "@/lib/format";
 import { getCategoryColor } from "@/types";
 import { cn } from "@/lib/utils";
 import { StatCard } from "@/components/fintech/StatCard";
@@ -23,14 +24,26 @@ import { EmptyState } from "@/components/EmptyState";
 import { DashboardStatsSkeleton } from "@/components/skeletons";
 import { useChartTheme } from "@/hooks/useChartTheme";
 import { getTimeGreeting } from "@/lib/greeting";
-import { getFirstName, possessiveLabel, formatPersonOwes, formatPersonIsOwed } from "@/lib/displayNames";
-import { getMemberPaidAndShare } from "@/lib/outing";
+import {
+  getFirstName,
+  possessiveLabel,
+  formatPayTo,
+  formatReturnFrom,
+} from "@/lib/displayNames";
 import {
   getOutingExpenseBreakdown,
-  getSpendingTrend,
+  getTransactionDate,
   getRecentActivity,
   getTransactionsForOutings,
+  getThisMonthSpent,
+  getMonthOverMonthTrend,
 } from "@/lib/dashboard";
+import { getDashboardContext } from "@/lib/dashboardContext";
+import { isOpenOuting } from "@/lib/balances";
+import { getOutingDate } from "@/lib/reportFilters";
+import { OutingContextStrip } from "@/components/dashboard/OutingContextStrip";
+import { FirstRunPanel } from "@/components/dashboard/FirstRunPanel";
+import { DataErrorState } from "@/components/DataErrorState";
 const stagger = {
   hidden: { opacity: 0 },
   show: {
@@ -80,11 +93,15 @@ export default function Dashboard() {
     loading,
     dashboardStats,
     outings,
-    friends,
     transactions,
     currentUserId,
     currentUserName,
     getOutingYourShare,
+    updateOuting,
+    settlementRecords,
+    friends,
+    error,
+    retry,
   } = useData();
   const navigate = useNavigate();
   const chart = useChartTheme();
@@ -98,8 +115,20 @@ export default function Dashboard() {
     [transactions, outings]
   );
 
-  const youSpent = useMemo(
-    () => getMemberPaidAndShare(currentUserId, activeTransactions).paid,
+  const dashboardContext = useMemo(
+    () => getDashboardContext(outings, activeTransactions),
+    [outings, activeTransactions]
+  );
+
+  const contextOuting = dashboardContext.mode === "home" ? null : dashboardContext.outing;
+
+  const thisMonthSpent = useMemo(
+    () => getThisMonthSpent(activeTransactions, currentUserId),
+    [activeTransactions, currentUserId]
+  );
+
+  const monthTrend = useMemo(
+    () => getMonthOverMonthTrend(activeTransactions, currentUserId),
     [activeTransactions, currentUserId]
   );
 
@@ -111,7 +140,10 @@ export default function Dashboard() {
     [outings]
   );
 
-  const activeOutingId = selectedOutingId || sortedOutings[0]?.id || "";
+  // Defaults to the outing the context strip is already leading with, so the
+  // header and the chart never talk about different trips.
+  const activeOutingId =
+    selectedOutingId || contextOuting?.id || sortedOutings[0]?.id || "";
   const selectedOuting = sortedOutings.find((o) => o.id === activeOutingId);
 
   const categoryData = useMemo(
@@ -120,9 +152,20 @@ export default function Dashboard() {
   );
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
 
+  /**
+   * The dropdown only offers month names, so resolve the year as the most
+   * recent occurrence of that month: a month later than the current one must
+   * belong to last year. Without this, picking December always meant December
+   * of this year — a month that has not happened yet, so the chart was empty.
+   */
+  const selectedYear = useMemo(() => {
+    const now = new Date();
+    return selectedMonth > now.getMonth() ? now.getFullYear() - 1 : now.getFullYear();
+  }, [selectedMonth]);
+
   const spendingTrend = useMemo(() => {
     const monthIdx = selectedMonth;
-    const year = new Date().getFullYear();
+    const year = selectedYear;
     const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
     const buckets = Array.from({ length: daysInMonth }, (_, i) => ({
       day: `${i + 1}`,
@@ -130,7 +173,8 @@ export default function Dashboard() {
     }));
 
     activeTransactions.forEach((tx) => {
-      const txDate = new Date(tx.createdAt);
+      // Bucket by the expense date the user entered, not when it was logged.
+      const txDate = getTransactionDate(tx);
       if (txDate.getMonth() === monthIdx && txDate.getFullYear() === year) {
         const dayNum = txDate.getDate();
         if (dayNum >= 1 && dayNum <= daysInMonth) {
@@ -144,19 +188,69 @@ export default function Dashboard() {
       month: `${b.day} ${MONTH_LABELS_SHORT[monthIdx]}`,
       amount: Math.round(b.amount * 100) / 100,
     }));
-  }, [activeTransactions, selectedMonth, currentUserId]);
+  }, [activeTransactions, selectedMonth, selectedYear, currentUserId]);
+
+  /**
+   * Activity is about what is live: ongoing and planned outings. When nothing
+   * is open, fall back to the most recent outing so the feed still has
+   * something to show rather than going blank.
+   */
+  const activityOutings = useMemo(() => {
+    const open = outings.filter(isOpenOuting);
+    if (open.length > 0) return open;
+
+    const last = [...outings].sort(
+      (a, b) => getOutingDate(b).getTime() - getOutingDate(a).getTime()
+    )[0];
+    return last ? [last] : [];
+  }, [outings]);
 
   const activityItems = useMemo(
-    () => getRecentActivity(activeTransactions, outings, currentUserId, currentUserName),
-    [activeTransactions, outings, currentUserId, currentUserName]
+    () =>
+      getRecentActivity(
+        activeTransactions,
+        activityOutings,
+        currentUserId,
+        currentUserName,
+        // Everything from the live outings; the list scrolls rather than truncating.
+        200,
+        settlementRecords
+      ),
+    [activeTransactions, activityOutings, currentUserId, currentUserName, settlementRecords]
   );
 
   const upcomingOutings = outings.filter((o) => o.status === "planned");
-  const returnAmount = dashboardStats.totalBalance;
-  const isReturnPositive = returnAmount > 0;
-  const isReturnNegative = returnAmount < 0;
 
-  const firstOngoingOuting = upcomingOutings[0];
+  // A fresh account has nothing to summarise — show the path in, not five
+  // empty boxes stacked on top of each other.
+  const isFirstRun = activeTransactions.length === 0;
+
+  const handleReopenOuting = useCallback(
+    (outingId: string) => {
+      updateOuting(outingId, { status: "ongoing" });
+      toast.success("Outing reopened", {
+        description: "It counts towards your balances again.",
+      });
+    },
+    [updateOuting]
+  );
+  // Net position across every open outing. Two-directional, so it carries the
+  // neutral name: "Return Amount" only reads correctly when money is coming back.
+  const netBalance = dashboardStats.totalBalance;
+  const isNetPositive = netBalance > 0;
+  const isNetNegative = netBalance < 0;
+
+
+  if (error) {
+    return (
+      <div className="space-y-6 pb-6">
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+          Dashboard
+        </h1>
+        <DataErrorState message={error} onRetry={retry} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -197,7 +291,19 @@ export default function Dashboard() {
         </p>
       </motion.div>
 
-      {/* Stat cards */}
+      {/* What is happening right now — quiet at home, loud mid-trip. */}
+      {isFirstRun ? (
+        <FirstRunPanel
+          hasFriends={friends.length > 0}
+          hasOutings={outings.length > 0}
+          hasExpenses={activeTransactions.length > 0}
+          name={firstName}
+        />
+      ) : (
+        <OutingContextStrip context={dashboardContext} onReopen={handleReopenOuting} />
+      )}
+
+      {/* Stat cards — the two halves of your balance are the actionable ones. */}
       <motion.div
         variants={stagger}
         initial="hidden"
@@ -206,52 +312,64 @@ export default function Dashboard() {
       >
         <motion.div variants={fadeUp} className="h-full">
           <StatCard
-            title={`${possessiveLabel(currentUserName)} Active Outings`}
-            value={dashboardStats.activeOutings}
-            icon={Activity}
-            variant="primary"
-            subtitle="Currently ongoing"
-          />
-        </motion.div>
-        <motion.div variants={fadeUp} className="h-full">
-          <StatCard
-            title="Total Friends"
-            value={friends.length}
-            icon={Users}
-            variant="primary"
-            subtitle="In your network"
-          />
-        </motion.div>
-        <motion.div variants={fadeUp} className="h-full">
-          <StatCard
-            title={`${possessiveLabel(currentUserName)} Spent`}
-            value={youSpent}
-            prefix="₹"
-            icon={CreditCard}
-            variant="default"
-            subtitle={`Total amount ${possessiveLabel(currentUserName)} paid`}
-          />
-        </motion.div>
-        <motion.div variants={fadeUp} className="h-full">
-          <StatCard
-            title="Return Amount"
-            value={Math.abs(returnAmount)}
-            prefix={isReturnNegative ? "-₹" : "₹"}
+            title="Net Balance"
+            value={Math.abs(netBalance)}
+            prefix={`${isNetNegative ? "-" : ""}${getCurrencySymbol()}`}
             icon={Scale}
             variant={
-              isReturnNegative
-                ? "destructive"
-                : isReturnPositive
-                  ? "success"
-                  : "default"
+              isNetNegative ? "destructive" : isNetPositive ? "success" : "default"
             }
             subtitle={
-              isReturnNegative
-                ? formatPersonOwes(currentUserName, Math.abs(returnAmount))
-                : isReturnPositive
-                  ? formatPersonIsOwed(currentUserName, returnAmount)
+              isNetNegative
+                ? formatPayTo(Math.abs(netBalance))
+                : isNetPositive
+                  ? formatReturnFrom(netBalance)
                   : "All settled"
             }
+          />
+        </motion.div>
+
+        <motion.div variants={fadeUp} className="h-full">
+          <StatCard
+            title="To Collect"
+            value={dashboardStats.youAreOwed}
+            prefix={getCurrencySymbol()}
+            icon={ArrowDownLeft}
+            variant={dashboardStats.youAreOwed > 0 ? "success" : "default"}
+            subtitle={
+              dashboardStats.owedCount > 0
+                ? `From ${dashboardStats.owedCount} ${dashboardStats.owedCount === 1 ? "person" : "people"}`
+                : "Nobody owes you"
+            }
+            onClick={() => navigate("/settle")}
+          />
+        </motion.div>
+
+        <motion.div variants={fadeUp} className="h-full">
+          <StatCard
+            title="To Pay"
+            value={dashboardStats.youOwe}
+            prefix={getCurrencySymbol()}
+            icon={ArrowUpRight}
+            variant={dashboardStats.youOwe > 0 ? "destructive" : "default"}
+            subtitle={
+              dashboardStats.oweCount > 0
+                ? `To ${dashboardStats.oweCount} ${dashboardStats.oweCount === 1 ? "person" : "people"}`
+                : "You owe nothing"
+            }
+            onClick={() => navigate("/settle")}
+          />
+        </motion.div>
+
+        <motion.div variants={fadeUp} className="h-full">
+          <StatCard
+            title="This Month"
+            value={thisMonthSpent}
+            prefix={getCurrencySymbol()}
+            icon={CreditCard}
+            variant="primary"
+            trend={monthTrend}
+            subtitle={`${possessiveLabel(currentUserName)} share of expenses`}
           />
         </motion.div>
       </motion.div>
@@ -384,7 +502,7 @@ export default function Dashboard() {
               <div>
                 <h3 className="font-semibold text-foreground">Spending Trend</h3>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  {possessiveLabel(currentUserName)} share in {MONTH_NAMES[selectedMonth]}
+                  {possessiveLabel(currentUserName)} share in {MONTH_NAMES[selectedMonth]} {selectedYear}
                 </p>
               </div>
               <select
@@ -418,7 +536,7 @@ export default function Dashboard() {
                     tick={{ fill: chart.text, fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(v) => (v >= 1000 ? `₹${v / 1000}k` : `₹${v}`)}
+                    tickFormatter={(v) => formatCompact(Number(v))}
                   />
                   <Tooltip
                     contentStyle={{
@@ -449,31 +567,79 @@ export default function Dashboard() {
           transition={{ delay: 0.25 }}
           className="lg:col-span-2 space-y-6"
         >
-          {/* Quick actions — stacked on desktop, horizontal scroll on mobile */}
-          <div className="fintech-card p-4 sm:p-5">
+          {/* Desktop only: on mobile the header FAB (md:hidden) already offers
+              these same actions, so the card was a duplicate costing a screenful
+              of scroll above the outings and activity people actually come for. */}
+          <div className="hidden md:block fintech-card p-4 sm:p-5">
             <h3 className="font-semibold text-foreground mb-3 sm:mb-4">Quick Actions</h3>
             <div className="grid grid-cols-1 gap-3 max-w-md mx-auto lg:max-w-none lg:mx-0">
-              <QuickActionButton
-                icon={Plus}
-                label="Create New Outing"
-                description="Start tracking a new trip"
-                variant="primary"
-                onClick={() => navigate("/outings")}
-              />
-              <QuickActionButton
-                icon={UserPlus}
-                label="Add Friend"
-                description="Invite someone to split"
-                onClick={() => navigate("/friends")}
-              />
-              <QuickActionButton
-                icon={Receipt}
-                label="Log Expense"
-                description="Record a new transaction"
-                onClick={() =>
-                  navigate(firstOngoingOuting ? `/outings/${firstOngoingOuting.id}` : "/outings")
-                }
-              />
+              {dashboardContext.mode === "active" && contextOuting ? (
+                <>
+                  <QuickActionButton
+                    icon={Receipt}
+                    label="Add Transaction"
+                    description={`Add to ${contextOuting.name}`}
+                    variant="primary"
+                    onClick={() => navigate(`/outings/${contextOuting.id}?add=1`)}
+                  />
+                  <QuickActionButton
+                    icon={Scale}
+                    label="Settle Up"
+                    description="Clear who owes what"
+                    onClick={() => navigate("/settle")}
+                  />
+                  <QuickActionButton
+                    icon={Plus}
+                    label="Create New Outing"
+                    description="Start tracking a new trip"
+                    onClick={() => navigate("/outings")}
+                  />
+                </>
+              ) : dashboardContext.mode === "planning" && contextOuting ? (
+                <>
+                  <QuickActionButton
+                    icon={UserPlus}
+                    label="Add Members"
+                    description={`Invite friends to ${contextOuting.name}`}
+                    variant="primary"
+                    onClick={() => navigate(`/outings/${contextOuting.id}`)}
+                  />
+                  <QuickActionButton
+                    icon={Wallet}
+                    label="Set Budget"
+                    description="Plan what the trip should cost"
+                    onClick={() => navigate(`/outings/${contextOuting.id}`)}
+                  />
+                  <QuickActionButton
+                    icon={Receipt}
+                    label="Add Transaction"
+                    description="Tickets, deposits, advance payments"
+                    onClick={() => navigate(`/outings/${contextOuting.id}?add=1`)}
+                  />
+                </>
+              ) : (
+                <>
+                  <QuickActionButton
+                    icon={Plus}
+                    label="Create New Outing"
+                    description="Start tracking a new trip"
+                    variant="primary"
+                    onClick={() => navigate("/outings")}
+                  />
+                  <QuickActionButton
+                    icon={UserPlus}
+                    label="Add Friend"
+                    description="Invite someone to split"
+                    onClick={() => navigate("/friends")}
+                  />
+                  <QuickActionButton
+                    icon={Scale}
+                    label="Settle Up"
+                    description="Clear who owes what"
+                    onClick={() => navigate("/settle")}
+                  />
+                </>
+              )}
             </div>
           </div>
 
@@ -525,7 +691,15 @@ export default function Dashboard() {
             />
           </div>
         ) : (
-          <ActivityFeed items={activityItems} />
+          <ActivityFeed
+            items={activityItems}
+            title={
+              activityOutings.length === 1 && !isOpenOuting(activityOutings[0])
+                ? `Recent Activity · ${activityOutings[0].name}`
+                : "Recent Activity"
+            }
+            itemsClassName="max-h-[26rem] overflow-y-auto pr-1"
+          />
         )}
       </motion.div>
     </div>

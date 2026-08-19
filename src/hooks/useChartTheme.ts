@@ -14,6 +14,8 @@ export function useChartTheme() {
     primary: isDark ? "#14B8A6" : "#0F766E",
     grid: isDark ? "#1a1a1a" : "#f1f5f9",
     text: isDark ? "#94A3B8" : "#64748B",
+    /** Neutral bar/series fill — distinct from `text`, which is for axis labels. */
+    muted: isDark ? "#475569" : "#CBD5E1",
     tooltip: {
       bg: isDark ? "#0F0F0F" : "#ffffff",
       border: isDark ? "#2A2A2A" : "#e2e8f0",
