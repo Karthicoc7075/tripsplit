@@ -3,6 +3,8 @@ import {
   UtensilsCrossed, Car, BedDouble, Clapperboard, ShoppingBag, Ticket,
   ParkingCircle, Gift, Stethoscope, Camera, Receipt,
   Plane, Landmark, Film, MapPin,
+  CupSoda, Cake, HandCoins, Flame, Flower2, Footprints,
+  Fuel, CarFront, Cookie, Percent, FerrisWheel, Compass, Tag,
 } from "lucide-react";
 
 /**
@@ -57,9 +59,31 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
   Restaurant: UtensilsCrossed,
   Movies: Film,
   Other: Receipt,
+
+  // Preset categories (see CATEGORY_PRESETS in types/index.ts).
+  Drinks: CupSoda,
+  Desserts: Cake,
+  Snacks: Cookie,
+  Tip: HandCoins,
+  "Taxes / Service Charge": Percent,
+  Activities: FerrisWheel,
+  "Fuel & Tolls": Fuel,
+  "Rental Vehicle": CarFront,
+  "Tour / Guide": Compass,
+  "Convenience Fee": Percent,
+  "Darshan / Special Entry": Ticket,
+  "Pooja / Archana": Flame,
+  Prasadam: Flower2,
+  "Donation / Hundi": HandCoins,
+  "Footwear / Locker": Footprints,
 };
 
+/**
+ * Fallback is `Tag`, deliberately not an icon used by any real category —
+ * otherwise a genuine assignment is indistinguishable from a missing one, and
+ * the coverage test cannot tell them apart.
+ */
 export function getCategoryIcon(category?: string): LucideIcon {
-  if (!category) return Receipt;
-  return CATEGORY_ICONS[category] ?? MapPin;
+  if (!category) return Tag;
+  return CATEGORY_ICONS[category] ?? Tag;
 }

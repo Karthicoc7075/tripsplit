@@ -24,6 +24,88 @@ export const TRANSACTION_CATEGORIES = [
   "Other",
 ] as const;
 
+/**
+ * Label shown for an outing type. The stored value stays as-is — renaming
+ * `"Other"` would orphan every outing already saved with that string.
+ */
+export const OUTING_CATEGORY_LABELS: Record<OutingCategory, string> = {
+  Trip: "Trip",
+  Temple: "Temple",
+  Restaurant: "Restaurant",
+  Movies: "Movies",
+  Other: "Casual Outing",
+};
+
+/**
+ * Expense categories offered per outing type.
+ *
+ * A temple visit and a five-day trip need different vocabulary, but names that
+ * mean the same thing are kept **identical** across sets — Transport, Food,
+ * Drinks, Shopping, Parking, Entry Tickets, Other. Category names are stored on
+ * every transaction and become permanent history, so "Shopping" and
+ * "Shopping / Souvenirs" would show as two separate slices in Reports forever.
+ *
+ * `primary` is shown up front; `more` sits behind an expander so entering an
+ * expense is not a scroll through fifteen chips. Users can always add their own
+ * on top of both.
+ */
+export interface CategoryPreset {
+  primary: string[];
+  more: string[];
+}
+
+export const CATEGORY_PRESETS: Record<OutingCategory, CategoryPreset> = {
+  Trip: {
+    primary: [
+      "Transport",
+      "Accommodation",
+      "Food",
+      "Drinks",
+      "Entry Tickets",
+      "Activities",
+      "Shopping",
+      "Parking",
+    ],
+    more: [
+      "Fuel & Tolls",
+      "Rental Vehicle",
+      "Tour / Guide",
+      "Photography",
+      "Entertainment",
+      "Medical",
+      "Other",
+    ],
+  },
+  Temple: {
+    primary: [
+      "Darshan / Special Entry",
+      "Pooja / Archana",
+      "Prasadam",
+      "Donation / Hundi",
+      "Transport",
+      "Food",
+    ],
+    more: ["Accommodation", "Parking", "Footwear / Locker", "Shopping", "Other"],
+  },
+  Movies: {
+    primary: ["Entry Tickets", "Snacks", "Drinks", "Parking"],
+    more: ["Convenience Fee", "Transport", "Other"],
+  },
+  Restaurant: {
+    primary: ["Food", "Drinks", "Desserts", "Tip"],
+    more: ["Taxes / Service Charge", "Parking", "Transport", "Other"],
+  },
+  Other: {
+    primary: ["Food", "Drinks", "Activities", "Shopping", "Transport"],
+    more: ["Parking", "Entertainment", "Other"],
+  },
+};
+
+/** Falls back to the generic set for custom outing types. */
+export function getCategoryPreset(outingCategory: string): CategoryPreset {
+  return CATEGORY_PRESETS[outingCategory as OutingCategory] ?? CATEGORY_PRESETS.Other;
+}
+
 export interface User {
   id: string;
   name: string;

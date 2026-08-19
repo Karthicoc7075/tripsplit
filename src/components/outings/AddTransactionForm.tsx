@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Users, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getOutingMembers } from "@/lib/members";
-import { TRANSACTION_CATEGORIES, type Outing, type Transaction, type TransactionPayment } from "@/types";
+import {
+  TRANSACTION_CATEGORIES,
+  getCategoryPreset,
+  type Outing,
+  type Transaction,
+  type TransactionPayment,
+} from "@/types";
 import { cn } from "@/lib/utils";
 import { useData } from "@/context/DataContext";
 import { toLocalDateInput, formatCurrency, getCurrencySymbol } from "@/lib/format";
@@ -76,9 +82,42 @@ export function AddTransactionForm({
 
   const { updateOuting } = useData();
 
-  const availableCategories = useMemo(() => {
-    return [...TRANSACTION_CATEGORIES, ...(outing.customCategories || [])];
-  }, [outing.customCategories]);
+  const [showMoreCategories, setShowMoreCategories] = useState(false);
+
+  /**
+   * Derived from the outing's type rather than seeded onto the document, so
+   * existing outings get the better list too and nothing needs migrating.
+   * Anything the user has added is always shown up front alongside the preset.
+   */
+  const { primaryCategories, moreCategories, availableCategories } = useMemo(() => {
+    const preset = getCategoryPreset(outing.category);
+    const custom = outing.customCategories ?? [];
+
+    const seen = new Set<string>();
+    const dedupe = (list: string[]) =>
+      list.filter((c) => {
+        const key = c.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+    const primary = dedupe([...preset.primary, ...custom]);
+    // The full global list stays reachable so no category is ever lost.
+    const more = dedupe([...preset.more, ...TRANSACTION_CATEGORIES]);
+
+    return {
+      primaryCategories: primary,
+      moreCategories: more,
+      availableCategories: [...primary, ...more],
+    };
+  }, [outing.category, outing.customCategories]);
+
+  // If the expense being edited uses a category tucked away under "More",
+  // open the section so the current selection is visible.
+  useEffect(() => {
+    if (category && moreCategories.includes(category)) setShowMoreCategories(true);
+  }, [category, moreCategories]);
 
   const handleAddCustomCategory = async () => {
     const trimmed = customCategoryInput.trim();
@@ -214,7 +253,7 @@ export function AddTransactionForm({
       <div className="space-y-2">
         <Label>Category</Label>
         <div className="flex flex-wrap items-center gap-2">
-          {availableCategories.map((cat) => (
+          {(showMoreCategories ? availableCategories : primaryCategories).map((cat) => (
             <button
               key={cat}
               type="button"
@@ -229,6 +268,16 @@ export function AddTransactionForm({
               {cat}
             </button>
           ))}
+
+          {!showMoreCategories && moreCategories.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowMoreCategories(true)}
+              className="flex items-center gap-1 rounded-full border border-border/60 px-3 py-1 text-xs font-semibold text-muted-foreground transition-all hover:text-foreground"
+            >
+              More ({moreCategories.length})
+            </button>
+          )}
 
           {showAddCategory ? (
             <div className="flex items-center gap-1.5 w-full sm:w-auto sm:max-w-xs mt-1 sm:mt-0">

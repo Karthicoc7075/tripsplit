@@ -569,6 +569,70 @@ export async function replaceAllUserData(uid: string, data: AppData): Promise<vo
   await batch.commit();
 }
 
+export interface AccountDataSummary {
+  outings: number;
+  outingsYouCreated: number;
+  transactions: number;
+  settlements: number;
+  friends: number;
+  backups: number;
+}
+
+/**
+ * Permanently removes this user's account data.
+ *
+ * Shared outings are the subtle part: an outing you created belongs to
+ * everyone in it, so deleting it takes their expenses with it — that is
+ * unavoidable, since the outing cannot exist without its owner. Outings
+ * someone else created are only *left*, exactly like the Leave action, so
+ * their trips survive.
+ *
+ * Runs before the Firebase Auth user is deleted, because the security rules
+ * need the caller to still be signed in.
+ */
+export async function deleteAccountData(uid: string): Promise<void> {
+  const [outingsSnap, friendships1, friendships2, backupsSnap] = await Promise.all([
+    getDocs(query(outingsRef(), where("memberIds", "array-contains", uid))),
+    getDocs(query(friendshipsRef(), where("user1", "==", uid))),
+    getDocs(query(friendshipsRef(), where("user2", "==", uid))),
+    getDocs(query(backupsRef(), where("userId", "==", uid))),
+  ]);
+
+  const owned = outingsSnap.docs.filter(
+    (d) => (d.data() as { createdById?: string }).createdById === uid
+  );
+  const shared = outingsSnap.docs.filter(
+    (d) => (d.data() as { createdById?: string }).createdById !== uid
+  );
+
+  // Children before parents, so the rules can still read the outing's owner.
+  for (const d of owned) {
+    await deleteTransactionsForOuting(d.id);
+    await deleteSettlementsForOuting(d.id);
+  }
+  await Promise.all(owned.map((d) => deleteDoc(d.ref)));
+
+  // Someone else's outing: step out of it rather than destroying it.
+  await Promise.all(
+    shared.map((d) => {
+      const data = d.data() as { members?: { id: string }[]; memberIds?: string[] };
+      const members = (data.members ?? []).filter((m) => m.id !== uid);
+      return updateDoc(d.ref, {
+        members,
+        memberIds: (data.memberIds ?? []).filter((id) => id !== uid),
+      });
+    })
+  );
+
+  await Promise.all([
+    ...friendships1.docs.map((d) => deleteDoc(d.ref)),
+    ...friendships2.docs.map((d) => deleteDoc(d.ref)),
+    ...backupsSnap.docs.map((d) => deleteDoc(d.ref)),
+  ]);
+
+  await deleteDoc(doc(db, "users", uid));
+}
+
 // ─── Cloud Backup (flat /backups collection) ─────────────────────────────────
 
 function backupDocId(uid: string, outingId: string): string {

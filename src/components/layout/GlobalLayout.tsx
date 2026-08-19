@@ -75,7 +75,7 @@ export default function GlobalLayout() {
     <div className="min-h-screen bg-background flex flex-col pb-16 md:pb-0">
       <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="container mx-auto px-4 sm:px-6 h-16 flex items-center justify-between max-w-7xl">
-          <div className="flex items-center gap-8">
+          <div className="flex min-w-0 items-center gap-4 lg:gap-8">
             <NavLink
               to="/dashboard"
               className="flex shrink-0 items-center gap-1.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -88,18 +88,18 @@ export default function GlobalLayout() {
                 aria-hidden
                 className="h-9 w-9 shrink-0 object-contain sm:h-10 sm:w-10"
               />
-              <span className="whitespace-nowrap text-lg font-bold">
+              <span className="hidden whitespace-nowrap text-lg font-bold min-[380px]:inline">
                 <span style={{ color: "#276ACF" }}>Trip</span><span style={{ color: "#3AA91F" }}>Split</span>
               </span>
             </NavLink>
 
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="hidden min-w-0 items-center gap-0.5 md:flex lg:gap-1">
               {navItems.map((item) => (
                 <NavLink
                   key={item.name}
                   to={item.path}
                   className={({ isActive }) =>
-                    `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive
+                    `shrink-0 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition-colors lg:px-3 ${isActive
                       ? "text-primary bg-primary/8"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     }`
@@ -111,10 +111,10 @@ export default function GlobalLayout() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 lg:gap-3">
             <button
               onClick={openSearch}
-              className="hidden md:flex items-center gap-2 h-9 px-3 rounded-lg border border-border/60 bg-card text-sm text-muted-foreground hover:border-border hover:text-foreground transition-all w-56"
+              className="hidden h-9 w-40 items-center gap-2 rounded-lg border border-border/60 bg-card px-3 text-sm text-muted-foreground transition-all hover:border-border hover:text-foreground md:flex lg:w-56"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="flex-1 text-left truncate">Search...</span>
@@ -192,14 +192,10 @@ export default function GlobalLayout() {
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border/50 bg-background/95 backdrop-blur-xl">
         <div className="flex items-stretch h-16 px-1">
           {navItems.map((item) => {
-            const shortLabel =
-              item.name === "Dashboard"
-                ? "Home"
-                : item.name === "Outings"
-                  ? "Trips"
-                  : item.name === "Reports"
-                    ? "Reports"
-                    : item.name;
+            // The bar uses each page's own name, so the label matches the
+            // heading you land on. Only Dashboard is shortened — "Home" reads
+            // better in a 10px tab than "Dashboard", which truncates.
+            const shortLabel = item.name === "Dashboard" ? "Home" : item.name;
 
             return (
               <NavLink

@@ -21,6 +21,13 @@ export interface ReportFilters {
   memberId: string;
   /** Insights-only window. */
   period: "3m" | "6m" | "12m" | "all";
+  /**
+   * Archived outings are hidden from the timeline by default. There is no
+   * toggle in the filter row — archiving is a per-outing action in the edit
+   * modal, and archived trips stay listed on the Outings page, so they are
+   * never unreachable. Kept as a URL parameter (?archived=1) for anyone who
+   * wants to see them here.
+   */
   includeArchived: boolean;
 }
 

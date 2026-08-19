@@ -16,7 +16,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { BottomSheet } from "@/components/BottomSheet";
-import { OUTING_CATEGORIES, type Friend, type Outing, type OutingMember, type Transaction } from "@/types";
+import { OUTING_CATEGORIES, OUTING_CATEGORY_LABELS, type Friend, type Outing, type OutingMember, type Transaction } from "@/types";
 import {
   buildMembersList,
   getAddedMemberIds,
@@ -202,7 +202,7 @@ export function EditOutingModal({
                   : "border-border/60"
               )}
             >
-              {cat}
+              {OUTING_CATEGORY_LABELS[cat]}
             </button>
           ))}
         </div>

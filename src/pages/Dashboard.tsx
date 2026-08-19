@@ -38,6 +38,7 @@ import {
   getThisMonthSpent,
   getMonthOverMonthTrend,
 } from "@/lib/dashboard";
+import { getMemberCashFlow } from "@/lib/outing";
 import { getDashboardContext } from "@/lib/dashboardContext";
 import { isOpenOuting } from "@/lib/balances";
 import { getOutingDate } from "@/lib/reportFilters";
@@ -126,6 +127,23 @@ export default function Dashboard() {
     () => getThisMonthSpent(activeTransactions, currentUserId),
     [activeTransactions, currentUserId]
   );
+
+  /**
+   * While an outing is live — running or still being planned — the useful
+   * number is what it has cost *you*, not a calendar-month total spanning
+   * unrelated outings. A planned trip counts too: advance bookings are real
+   * money already spent. Cash out of pocket: paid + settlements sent −
+   * settlements received.
+   */
+  const activeOutingSpend = useMemo(() => {
+    if (dashboardContext.mode === "home") return null;
+    const id = dashboardContext.outing.id;
+    return getMemberCashFlow(
+      currentUserId,
+      activeTransactions.filter((t) => t.outingId === id),
+      settlementRecords.filter((r) => r.outingId === id)
+    );
+  }, [dashboardContext, activeTransactions, settlementRecords, currentUserId]);
 
   const monthTrend = useMemo(
     () => getMonthOverMonthTrend(activeTransactions, currentUserId),
@@ -362,15 +380,39 @@ export default function Dashboard() {
         </motion.div>
 
         <motion.div variants={fadeUp} className="h-full">
-          <StatCard
-            title="This Month"
-            value={thisMonthSpent}
-            prefix={getCurrencySymbol()}
-            icon={CreditCard}
-            variant="primary"
-            trend={monthTrend}
-            subtitle={`${possessiveLabel(currentUserName)} share of expenses`}
-          />
+          {activeOutingSpend && contextOuting ? (
+            <StatCard
+              title={`${possessiveLabel(currentUserName)} Spent`}
+              value={activeOutingSpend.cashOut}
+              prefix={getCurrencySymbol()}
+              icon={CreditCard}
+              variant="primary"
+              subtitle={
+                activeOutingSpend.settledIn > 0 || activeOutingSpend.settledOut > 0
+                  ? `Paid ${formatCurrency(activeOutingSpend.paid)}${
+                      activeOutingSpend.settledIn > 0
+                        ? ` · back ${formatCurrency(activeOutingSpend.settledIn)}`
+                        : ""
+                    }${
+                      activeOutingSpend.settledOut > 0
+                        ? ` · settled ${formatCurrency(activeOutingSpend.settledOut)}`
+                        : ""
+                    }`
+                  : `In ${contextOuting.name}`
+              }
+              onClick={() => navigate(`/outings/${contextOuting.id}`)}
+            />
+          ) : (
+            <StatCard
+              title="This Month"
+              value={thisMonthSpent}
+              prefix={getCurrencySymbol()}
+              icon={CreditCard}
+              variant="primary"
+              trend={monthTrend}
+              subtitle={`${possessiveLabel(currentUserName)} share of expenses`}
+            />
+          )}
         </motion.div>
       </motion.div>
 

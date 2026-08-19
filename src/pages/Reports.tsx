@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Download, Loader2, Receipt, Map, Users, Wallet, TrendingUp, Search,
-  Printer, FileJson, X, Archive, Sparkles, ArrowUpRight, PieChart as PieChartIcon,
+  Printer, FileJson, X, Sparkles, ArrowUpRight, PieChart as PieChartIcon,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -269,11 +269,11 @@ export default function Reports() {
 
             <div className="flex flex-wrap items-center gap-2">
               <FilterSelect
-                label="Category"
+                label="Outing type"
                 value={filters.category}
                 onChange={(category) => setFilters({ category })}
                 options={[
-                  { value: "all", label: "All categories" },
+                  { value: "all", label: "All outing types" },
                   ...availableCategories.map((c) => ({ value: c, label: c })),
                 ]}
               />
@@ -286,18 +286,6 @@ export default function Reports() {
                   ...availableMembers.map((m) => ({ value: m.id, label: m.name })),
                 ]}
               />
-              <button
-                type="button"
-                onClick={() => setFilters({ includeArchived: !filters.includeArchived })}
-                className={cn(
-                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors",
-                  filters.includeArchived
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border/60 bg-card text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Archive className="h-3.5 w-3.5" /> Archived
-              </button>
             </div>
           </div>
 
@@ -423,8 +411,10 @@ export default function Reports() {
                 </div>
 
                 <div className="fintech-card p-4 sm:p-6">
-                  <h3 className="font-semibold text-foreground">By Category</h3>
-                  <p className="mb-4 mt-0.5 text-sm text-muted-foreground">Where the group spent</p>
+                  <h3 className="font-semibold text-foreground">By Expense Category</h3>
+                  <p className="mb-4 mt-0.5 text-sm text-muted-foreground">
+                    Food, transport, stays — where the group spent
+                  </p>
                   {categoryData.length === 0 ? (
                     <p className="py-10 text-center text-sm text-muted-foreground">No categories yet</p>
                   ) : (

@@ -1,9 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { updateProfile } from "firebase/auth";
+import { updateProfile, deleteUser } from "firebase/auth";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { useAuth } from "@/context/AuthContext";
 import { CURRENCIES, getCurrencyCode, setCurrencyCode, type CurrencyCode } from "@/lib/format";
+import { downloadFile } from "@/lib/reports";
+import { deleteAccountData } from "@/lib/firestore";
 import { useTheme } from "@/components/ThemeProvider";
 import {
   User,
@@ -24,6 +26,10 @@ import {
   Map,
   Cloud,
   Wallet,
+  Download,
+  Database,
+  AlertTriangle,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -51,6 +57,16 @@ import {
   getPermissionStatusLabel,
 } from "@/lib/notifications";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { BackupRestorePanel } from "@/components/settings/BackupRestorePanel";
 import { useData } from "@/context/DataContext";
 import { cn } from "@/lib/utils";
@@ -59,6 +75,17 @@ const fadeUp = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
 };
+
+/**
+ * Account deletion is built (see deleteAccountData) but not yet enabled.
+ *
+ * It deletes across five collections, removes outings for every member of a
+ * trip you own, and cannot be undone — none of which has been exercised
+ * against a real project yet. Shipping the button before that verification
+ * risks destroying real data. Flip to true once it has been tested end to end
+ * on a throwaway account.
+ */
+const ACCOUNT_DELETION_ENABLED = false;
 
 function SettingsSection({
   title,
@@ -192,7 +219,13 @@ function isSettingsTab(value: string | null): value is SettingsTab {
 
 export default function Settings() {
   const { user, signOut } = useAuth();
-  const { backupAllOutings } = useData();
+  const {
+    backupAllOutings, outings, transactions, settlementRecords, friends, currentUserId,
+  } = useData();
+  const [backingUp, setBackingUp] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const { theme, setTheme } = useTheme();
   const [currency, setCurrency] = useState<CurrencyCode>(() => getCurrencyCode());
 
@@ -304,6 +337,77 @@ export default function Settings() {
       toast.error((err as Error).message || "Failed to update profile.");
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const dataSummary = useMemo(
+    () => ({
+      outings: outings.length,
+      outingsYouCreated: outings.filter((o) => o.createdById === currentUserId).length,
+      transactions: transactions.length,
+      settlements: settlementRecords.length,
+      friends: friends.length,
+    }),
+    [outings, transactions, settlementRecords, friends, currentUserId]
+  );
+
+  const handleBackupAll = async () => {
+    setBackingUp(true);
+    try {
+      await backupAllOutings();
+      toast.success("All outings backed up", {
+        description: `${dataSummary.outings} ${dataSummary.outings === 1 ? "outing" : "outings"} saved to your account`,
+      });
+    } catch (err) {
+      toast.error((err as Error).message || "Backup failed");
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  /** Everything this account holds, in one restorable file. */
+  const handleExportAll = () => {
+    const payload = {
+      app: "TripSplit",
+      kind: "account-export",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      user: { id: currentUserId, name: user?.displayName ?? "", email: user?.email ?? "" },
+      counts: dataSummary,
+      outings,
+      transactions,
+      settlementRecords,
+      friends,
+    };
+    downloadFile(
+      `tripsplit-account-${new Date().toISOString().slice(0, 10)}.json`,
+      JSON.stringify(payload, null, 2),
+      "application/json"
+    );
+    toast.success("Data exported");
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    setDeletingAccount(true);
+    try {
+      // Data first: the security rules need the caller still signed in.
+      await deleteAccountData(user.uid);
+      await deleteUser(user);
+      toast.success("Account deleted");
+      navigate("/signup");
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === "auth/requires-recent-login") {
+        toast.error("Please sign in again first", {
+          description: "For security, deleting an account requires a recent sign-in.",
+        });
+      } else {
+        toast.error((err as Error).message || "Could not delete account");
+      }
+    } finally {
+      setDeletingAccount(false);
+      setConfirmDeleteAccount(false);
     }
   };
 
@@ -631,6 +735,64 @@ export default function Settings() {
             animate="show"
             className="space-y-4"
           >
+            {/* What this account actually holds — otherwise "back up" and
+                "export" are buttons with no sense of scale behind them. */}
+            <SettingsSection
+              title="Your Data"
+              description="Everything stored under your account."
+              icon={Database}
+            >
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { label: "Outings", value: dataSummary.outings, hint: `${dataSummary.outingsYouCreated} yours` },
+                  { label: "Transactions", value: dataSummary.transactions },
+                  { label: "Settlements", value: dataSummary.settlements },
+                  { label: "Friends", value: dataSummary.friends },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="rounded-xl border border-border/60 bg-muted/20 p-3 text-center"
+                  >
+                    <p className="text-xl font-semibold tabular-nums text-foreground">
+                      {stat.value}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{stat.label}</p>
+                    {stat.hint && (
+                      <p className="text-[10px] text-muted-foreground/70">{stat.hint}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  className="h-11 flex-1 gap-2"
+                  onClick={handleBackupAll}
+                  disabled={backingUp || dataSummary.outings === 0}
+                >
+                  {backingUp ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Cloud size={16} />
+                  )}
+                  Back up all outings now
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-11 flex-1 gap-2"
+                  onClick={handleExportAll}
+                  disabled={dataSummary.outings === 0 && dataSummary.friends === 0}
+                >
+                  <Download size={16} /> Export everything (JSON)
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                The export is a complete, readable copy of your outings, expenses,
+                settlements and friends — keep it anywhere you like.
+              </p>
+            </SettingsSection>
+
             <SettingsSection
               title="Your Data & Deletions"
               description="Understand what happens when you or a friend removes an outing."
@@ -697,6 +859,73 @@ export default function Settings() {
             >
               <BackupRestorePanel />
             </SettingsSection>
+
+            <div className="fintech-card overflow-hidden border-destructive/40">
+              <div className="border-b border-destructive/20 bg-destructive/5 px-4 py-3 sm:px-6">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert size={18} className="shrink-0 text-destructive" />
+                  <h3 className="font-semibold text-foreground">Danger zone</h3>
+                </div>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Permanent, and it cannot be undone.
+                </p>
+              </div>
+
+              <div className="space-y-3 p-4 sm:p-6">
+                <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-muted/20 p-4">
+                  <AlertTriangle size={18} className="mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+                    <p className="text-sm font-semibold text-foreground">
+                      What deleting your account does
+                    </p>
+                    <p>
+                      <strong className="text-foreground">
+                        {dataSummary.outingsYouCreated} outing
+                        {dataSummary.outingsYouCreated === 1 ? "" : "s"} you created
+                      </strong>{" "}
+                      are deleted for everyone in them, along with their expenses and
+                      balances — an outing cannot exist without its owner.
+                    </p>
+                    <p>
+                      Outings a friend created are only{" "}
+                      <strong className="text-foreground">left</strong>, exactly like the
+                      Leave action. Their trips and expenses stay intact.
+                    </p>
+                    <p>
+                      Your profile, friendships and cloud backups are removed. Export your
+                      data first if you want a copy.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    variant="destructive"
+                    className="h-11 w-full gap-2 sm:w-auto"
+                    disabled={!ACCOUNT_DELETION_ENABLED}
+                    onClick={() => {
+                      setDeleteConfirmText("");
+                      setConfirmDeleteAccount(true);
+                    }}
+                  >
+                    <Trash2 size={16} /> Delete my account
+                  </Button>
+
+                  {!ACCOUNT_DELETION_ENABLED && (
+                    <Badge variant="secondary" className="shrink-0">
+                      Coming soon
+                    </Badge>
+                  )}
+                </div>
+
+                {!ACCOUNT_DELETION_ENABLED && (
+                  <p className="text-xs text-muted-foreground">
+                    Not available yet. In the meantime, export your data above, or
+                    contact support to have your account removed.
+                  </p>
+                )}
+              </div>
+            </div>
           </motion.div>
         </PremiumTabsContent>
 
@@ -766,6 +995,68 @@ export default function Settings() {
         onConfirm={handleSignOut}
         variant="destructive"
       />
+
+      {/* Account deletion is irreversible and can remove other people's data,
+          so it asks for the word to be typed rather than a single tap. */}
+      <Dialog
+        open={ACCOUNT_DELETION_ENABLED && confirmDeleteAccount}
+        onOpenChange={setConfirmDeleteAccount}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 shrink-0 text-destructive" />
+              Delete your account?
+            </DialogTitle>
+            <DialogDescription>
+              This permanently removes your profile, friendships, backups, and the{" "}
+              {dataSummary.outingsYouCreated} outing
+              {dataSummary.outingsYouCreated === 1 ? "" : "s"} you created — for everyone
+              in them. It cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm">
+              Type <span className="font-semibold text-foreground">DELETE</span> to confirm
+            </Label>
+            <Input
+              id="delete-confirm"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row-reverse">
+            <Button
+              variant="destructive"
+              className="h-11 flex-1 gap-2"
+              disabled={deleteConfirmText.trim() !== "DELETE" || deletingAccount}
+              onClick={handleDeleteAccount}
+            >
+              {deletingAccount ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" /> Deleting…
+                </>
+              ) : (
+                <>
+                  <Trash2 size={16} /> Delete permanently
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 flex-1"
+              onClick={() => setConfirmDeleteAccount(false)}
+              disabled={deletingAccount}
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

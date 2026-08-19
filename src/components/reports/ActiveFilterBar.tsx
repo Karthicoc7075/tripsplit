@@ -45,7 +45,7 @@ export function ActiveFilterBar({
   if (filters.category !== DEFAULT_FILTERS.category) {
     chips.push({
       key: "category",
-      label: "Category",
+      label: "Outing type",
       value: filters.category,
       reset: { category: DEFAULT_FILTERS.category },
     });

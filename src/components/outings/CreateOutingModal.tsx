@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { OUTING_CATEGORIES, type CreateOutingInput } from "@/types";
+import { OUTING_CATEGORIES, OUTING_CATEGORY_LABELS, type CreateOutingInput } from "@/types";
 import { cn } from "@/lib/utils";
 import type { Friend } from "@/types";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -131,7 +131,7 @@ export function CreateOutingModal({
                   : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
               )}
             >
-              {cat}
+              {OUTING_CATEGORY_LABELS[cat]}
             </button>
           ))}
           <button

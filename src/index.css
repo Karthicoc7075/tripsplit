@@ -35,8 +35,12 @@
     --success: 160 84% 39%;           /* #10B981 */
     --success-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;            /* #E2E8F0 */
-    --input: 214 32% 91%;
+    /* Most borders are drawn at 40–60% opacity (border-border/60 and friends).
+       At the old 91% lightness that blended to roughly #F2F5F8 over white —
+       present in the DOM, invisible on screen. Darkened so a /60 border lands
+       near the old full-strength colour instead of disappearing. */
+    --border: 214 32% 85%;            /* #CFD9E5 */
+    --input: 214 30% 80%;             /* Slightly stronger — fields read as interactive */
     --ring: 175 75% 26%;
 
     --radius: 0.625rem;
@@ -73,8 +77,12 @@
     --success: 160 72% 42%;
     --success-foreground: 0 0% 100%;
 
-    --border: 0 0% 17%;               /* #2A2A2A */
-    --input: 0 0% 17%;
+    /* Same correction as the light theme: borders are almost always drawn at
+       40–60% opacity, and at 17% lightness a /60 border resolved to #202020
+       over the #0F0F0F card — 17 levels of separation, invisible in practice.
+       Raised so a /60 border lands on the old full-strength #2B2B2B. */
+    --border: 0 0% 24%;               /* #3D3D3D */
+    --input: 0 0% 30%;                /* Slightly stronger — fields read as interactive */
     --ring: 175 75% 26%;
   }
 }
