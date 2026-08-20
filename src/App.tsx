@@ -7,6 +7,7 @@ import { DataProvider } from "@/context/DataContext";
 import { Toaster } from "sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import GlobalLayout from "@/components/layout/GlobalLayout";
+import PageTitle from "@/components/PageTitle";
 
 /**
  * Routes are split so the login screen no longer waits on Recharts and the
@@ -45,6 +46,7 @@ function App() {
     <AuthProvider>
       <DataProvider>
       <Router>
+        <PageTitle />
         <Suspense fallback={<RouteFallback />}>
         <Routes>
           {/* Redirect root to dashboard (which redirects to login if unauthenticated) */}

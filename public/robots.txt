@@ -1,0 +1,17 @@
+# TripSplit
+User-agent: *
+
+# Everything behind the login is the same shell HTML to a crawler — the SPA
+# rewrite serves index.html for all of these. Indexing them would compete with
+# the real entry page for the same content.
+Disallow: /dashboard
+Disallow: /friends
+Disallow: /outings
+Disallow: /settle
+Disallow: /reports
+Disallow: /settings
+Disallow: /forgot-password
+
+Allow: /
+
+Sitemap: https://tripsplit-beta.vercel.app/sitemap.xml

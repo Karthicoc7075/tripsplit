@@ -31,6 +31,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Crawler- and scraper-facing files only. Precaching them costs every
+        // visitor the download and buys nothing — no one in the app fetches them.
+        globIgnores: ['**/og-image.png', '**/robots.txt', '**/sitemap.xml'],
       },
     }),
   ],

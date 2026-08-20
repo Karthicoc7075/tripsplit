@@ -11,14 +11,12 @@ import {
 import { toast } from "sonner";
 import { CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AuthPageShell } from "@/components/auth/AuthPageShell";
-import { AuthBrandHeader } from "@/components/auth/AuthBrandHeader";
-import { AuthCard } from "@/components/auth/AuthCard";
+import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
+import { AuthHeading } from "@/components/auth/AuthHeading";
 import { AuthFloatingField } from "@/components/auth/AuthFloatingField";
 import { AuthErrorAlert } from "@/components/auth/AuthErrorAlert";
 import { AuthSubmitButton } from "@/components/auth/AuthSubmitButton";
 import { AuthCheckbox } from "@/components/auth/AuthCheckbox";
-import { AuthFooterLink } from "@/components/auth/AuthFooterLink";
 import { PasswordStrength } from "@/components/auth/PasswordStrength";
 
 const fieldVariants = {
@@ -99,107 +97,109 @@ export default function Signup() {
   };
 
   return (
-    <AuthPageShell>
+    <AuthSplitShell>
       <AnimatePresence mode="wait">
         {!isSuccess ? (
           <motion.div key="signup" exit={{ opacity: 0, scale: 0.98 }}>
-            <AuthBrandHeader
+            <AuthHeading
               title="Create your account"
-              subtitle="Start tracking outings with your friends"
+              subtitle="Free to start. Add your first outing in under a minute."
             />
 
-            <AuthCard footer={<AuthFooterLink text="Already have an account?" linkText="Sign in" to="/login" />}>
-              <AuthErrorAlert
-                title={getAuthErrorTitle(errorCode, "signup")}
-                message={error}
-                action={
-                  errorCode === "auth/email-already-in-use" ? (
-                    <Link
-                      to="/login"
-                      className="text-xs font-semibold underline hover:no-underline"
-                    >
-                      Sign in to your account →
-                    </Link>
-                  ) : undefined
-                }
-              />
+            <AuthErrorAlert
+              title={getAuthErrorTitle(errorCode, "signup")}
+              message={error}
+              action={
+                errorCode === "auth/email-already-in-use" ? (
+                  <Link to="/login" className="text-xs font-semibold underline hover:no-underline">
+                    Sign in to your account →
+                  </Link>
+                ) : undefined
+              }
+            />
 
-              <motion.form
-                initial="hidden"
-                animate="show"
-                variants={{ show: { transition: { staggerChildren: 0.06 } } }}
-                onSubmit={handleSignup}
-                className="space-y-4"
-              >
-                <motion.div variants={fieldVariants}>
-                  <AuthFloatingField
-                    label="Full Name"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    autoComplete="name"
-                  />
-                </motion.div>
+            <motion.form
+              initial="hidden"
+              animate="show"
+              variants={{ show: { transition: { staggerChildren: 0.06 } } }}
+              onSubmit={handleSignup}
+              className="space-y-4"
+            >
+              <motion.div variants={fieldVariants}>
+                <AuthFloatingField
+                  label="Full Name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  autoComplete="name"
+                />
+              </motion.div>
 
-                <motion.div variants={fieldVariants}>
-                  <AuthFloatingField
-                    label="Email Address"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    autoComplete="email"
-                  />
-                </motion.div>
+              <motion.div variants={fieldVariants}>
+                <AuthFloatingField
+                  label="Email Address"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </motion.div>
 
-                <motion.div variants={fieldVariants} className="space-y-2">
-                  <AuthFloatingField
-                    label="Password"
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoComplete="new-password"
-                    showToggle
-                    isVisible={showPassword}
-                    onToggle={() => setShowPassword(!showPassword)}
-                  />
-                  <PasswordStrength password={password} />
-                </motion.div>
+              <motion.div variants={fieldVariants} className="space-y-2">
+                <AuthFloatingField
+                  label="Password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  showToggle
+                  isVisible={showPassword}
+                  onToggle={() => setShowPassword(!showPassword)}
+                />
+                <PasswordStrength password={password} />
+              </motion.div>
 
-                <motion.div variants={fieldVariants}>
-                  <AuthFloatingField
-                    label="Confirm Password"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    autoComplete="new-password"
-                    error={confirmError ?? undefined}
-                  />
-                </motion.div>
+              <motion.div variants={fieldVariants}>
+                <AuthFloatingField
+                  label="Confirm Password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  error={confirmError ?? undefined}
+                />
+              </motion.div>
 
-                <motion.div variants={fieldVariants} className="pt-1">
-                  <AuthCheckbox checked={agreeTerms} onChange={setAgreeTerms}>
-                    I agree to the{" "}
-                    <a href="/terms" className="text-primary hover:underline font-medium">Terms of Service</a>
-                    {" "}and{" "}
-                    <a href="/privacy" className="text-primary hover:underline font-medium">Privacy Policy</a>
-                  </AuthCheckbox>
-                </motion.div>
+              <motion.div variants={fieldVariants} className="pt-1">
+                <AuthCheckbox checked={agreeTerms} onChange={setAgreeTerms}>
+                  I agree to the{" "}
+                  <a href="/terms" className="font-medium text-primary hover:underline">Terms of Service</a>
+                  {" "}and{" "}
+                  <a href="/privacy" className="font-medium text-primary hover:underline">Privacy Policy</a>
+                </AuthCheckbox>
+              </motion.div>
 
-                <motion.div variants={fieldVariants} className="pt-2">
-                  <AuthSubmitButton
-                    loading={loading}
-                    loadingText="Creating account..."
-                    disabled={!isFormValid}
-                  >
-                    Create Account
-                  </AuthSubmitButton>
-                </motion.div>
-              </motion.form>
-            </AuthCard>
+              <motion.div variants={fieldVariants} className="pt-2">
+                <AuthSubmitButton
+                  loading={loading}
+                  loadingText="Creating account..."
+                  disabled={!isFormValid}
+                >
+                  Create Account
+                </AuthSubmitButton>
+              </motion.div>
+            </motion.form>
+
+            <p className="mt-8 border-t border-border/60 pt-6 text-center text-sm text-muted-foreground">
+              Already have an account?{" "}
+              <Link to="/login" className="font-semibold text-primary hover:underline">
+                Sign in
+              </Link>
+            </p>
           </motion.div>
         ) : (
           <motion.div
@@ -207,38 +207,35 @@ export default function Signup() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ type: "spring", duration: 0.5 }}
+            className="text-center"
           >
-            <AuthCard>
-              <div className="text-center py-6">
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.15, type: "spring", stiffness: 140 }}
-                  className="h-16 w-16 mx-auto bg-success/15 border border-success/30 rounded-full flex items-center justify-center mb-6"
-                >
-                  <CheckCircle2 className="h-9 w-9 text-success" />
-                </motion.div>
-                <motion.h2
-                  initial={{ y: 10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.25 }}
-                  className="text-2xl font-semibold text-foreground"
-                >
-                  Account Created!
-                </motion.h2>
-                <motion.p
-                  initial={{ y: 10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.35 }}
-                  className="text-sm text-muted-foreground mt-2"
-                >
-                  Setting up your workspace… Redirecting now.
-                </motion.p>
-              </div>
-            </AuthCard>
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ delay: 0.15, type: "spring", stiffness: 140 }}
+              className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-success/30 bg-success/15"
+            >
+              <CheckCircle2 className="h-9 w-9 text-success" />
+            </motion.div>
+            <motion.h2
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.25 }}
+              className="text-2xl font-semibold text-foreground"
+            >
+              Account created
+            </motion.h2>
+            <motion.p
+              initial={{ y: 10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.35 }}
+              className="mt-2 text-sm text-muted-foreground"
+            >
+              Setting up your workspace… Redirecting now.
+            </motion.p>
           </motion.div>
         )}
       </AnimatePresence>
-    </AuthPageShell>
+    </AuthSplitShell>
   );
 }

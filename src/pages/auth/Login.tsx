@@ -9,14 +9,12 @@ import {
 } from "@/lib/authErrors";
 import { toast } from "sonner";
 import { Users, Calculator, Wallet } from "lucide-react";
-import { AuthPageShell } from "@/components/auth/AuthPageShell";
-import { AuthBrandHeader } from "@/components/auth/AuthBrandHeader";
-import { AuthCard } from "@/components/auth/AuthCard";
+import { AuthSplitShell } from "@/components/auth/AuthSplitShell";
+import { AuthHeading } from "@/components/auth/AuthHeading";
 import { AuthFloatingField } from "@/components/auth/AuthFloatingField";
 import { AuthErrorAlert } from "@/components/auth/AuthErrorAlert";
 import { AuthSubmitButton } from "@/components/auth/AuthSubmitButton";
 import { AuthCheckbox } from "@/components/auth/AuthCheckbox";
-import { AuthFooterLink } from "@/components/auth/AuthFooterLink";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -70,85 +68,87 @@ export default function Login() {
   };
 
   return (
-    <AuthPageShell>
-      <AuthBrandHeader
+    <AuthSplitShell>
+      <AuthHeading
         title="Welcome back"
-        subtitle="Sign in to continue managing your outings"
+        subtitle="Sign in to pick up your outings where you left off."
       />
 
-      {/* One line on what this is, for anyone arriving cold. Hidden once they
-          have signed in before, since it is then just noise. */}
+      {/* The brand panel carries the pitch on desktop; this is the small-screen
+          stand-in, and only for people who have not signed in here before. */}
       {!rememberedEmail && (
-        <ul className="mb-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-3">
+        <ul className="mb-7 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground lg:hidden">
           {[
             { icon: Users, text: "Split with friends" },
             { icon: Calculator, text: "We do the maths" },
             { icon: Wallet, text: "Settle in one tap" },
           ].map(({ icon: Icon, text }) => (
-            <li key={text} className="flex items-center gap-2">
-              <Icon className="h-4 w-4 shrink-0 text-primary" />
-              <span className="truncate">{text}</span>
+            <li key={text} className="flex items-center gap-1.5">
+              <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <span>{text}</span>
             </li>
           ))}
         </ul>
       )}
 
-      <AuthCard
-        footer={<AuthFooterLink text="Don't have an account?" linkText="Create one" to="/signup" />}
-      >
-        <AuthErrorAlert
-          title={getAuthErrorTitle(errorCode, "login")}
-          message={error}
-          action={
-            errorCode === "auth/user-not-found" ? (
-              <Link
-                to="/signup"
-                className="text-xs font-semibold underline hover:no-underline"
-              >
-                Create an account →
-              </Link>
-            ) : undefined
-          }
+      <AuthErrorAlert
+        title={getAuthErrorTitle(errorCode, "login")}
+        message={error}
+        action={
+          errorCode === "auth/user-not-found" ? (
+            <Link to="/signup" className="text-xs font-semibold underline hover:no-underline">
+              Create an account →
+            </Link>
+          ) : undefined
+        }
+      />
+
+      <form onSubmit={handleEmailLogin} className="space-y-4">
+        <AuthFloatingField
+          label="Email Address"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoComplete="email"
+        />
+        <AuthFloatingField
+          label="Password"
+          type={showPassword ? "text" : "password"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          autoComplete="current-password"
+          showToggle
+          isVisible={showPassword}
+          onToggle={() => setShowPassword(!showPassword)}
         />
 
-        <form onSubmit={handleEmailLogin} className="space-y-5">
-          <AuthFloatingField
-            label="Email Address"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-          <AuthFloatingField
-            label="Password"
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-            showToggle
-            isVisible={showPassword}
-            onToggle={() => setShowPassword(!showPassword)}
-          />
+        <div className="flex items-center justify-between gap-3 pt-0.5">
+          <AuthCheckbox checked={rememberMe} onChange={setRememberMe}>
+            Remember me
+          </AuthCheckbox>
+          <Link
+            to="/forgot-password"
+            className="shrink-0 text-xs font-medium text-primary transition-colors hover:underline"
+          >
+            Forgot password?
+          </Link>
+        </div>
 
-          <div className="flex items-center justify-between pt-0.5">
-            <AuthCheckbox checked={rememberMe} onChange={setRememberMe}>
-              Remember me
-            </AuthCheckbox>
-            <Link
-              to="/forgot-password"
-              className="text-xs text-primary font-medium hover:underline transition-colors"
-            >
-              Forgot Password?
-            </Link>
-          </div>
-
+        <div className="pt-2">
           <AuthSubmitButton loading={loading} loadingText="Signing in...">
             Sign In
           </AuthSubmitButton>
-        </form>
-      </AuthCard>
-    </AuthPageShell>
+        </div>
+      </form>
+
+      <p className="mt-8 border-t border-border/60 pt-6 text-center text-sm text-muted-foreground">
+        Don't have an account?{" "}
+        <Link to="/signup" className="font-semibold text-primary hover:underline">
+          Create one
+        </Link>
+      </p>
+    </AuthSplitShell>
   );
 }
