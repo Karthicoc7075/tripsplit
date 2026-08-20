@@ -1,15 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="TripSplit">
-  <defs>
-    <linearGradient id="teal" x1="12" y1="4" x2="52" y2="60" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#14B8A6"/>
-      <stop offset="1" stop-color="#0F766E"/>
-    </linearGradient>
-  </defs>
-  <path fill="url(#teal)" d="M32 3c-11.6 0-21 9.4-21 21 0 13.9 16.9 33.1 19.8 36.3a1.6 1.6 0 0 0 2.4 0C36.1 57.1 53 37.9 53 24c0-11.6-9.4-21-21-21Z"/>
-  <circle cx="32" cy="24" r="11.5" fill="#fff"/>
-  <g stroke="url(#teal)" stroke-width="2.6" stroke-linecap="round">
-    <path d="M32 24V12.5"/>
-    <path d="m32 24 9.96 5.75"/>
-    <path d="m32 24-9.96 5.75"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" aria-label="TripSplit" role="img" viewBox="0 0 64 64"><defs><linearGradient id="teal" x1="12" x2="52" y1="4" y2="60" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#14B8A6"/><stop offset="1" stop-color="#0F766E"/></linearGradient></defs><path fill="url(#teal)" d="M32 3c-11.6 0-21 9.4-21 21 0 13.9 16.9 33.1 19.8 36.3a1.6 1.6 0 0 0 2.4 0C36.1 57.1 53 37.9 53 24c0-11.6-9.4-21-21-21Z"/><circle cx="32" cy="24" r="11.5" fill="#fff"/><g stroke="url(#teal)" stroke-linecap="round" stroke-width="2.6"><path d="M32 24V12.5"/><path d="m32 24 9.96 5.75"/><path d="m32 24-9.96 5.75"/></g></svg>
