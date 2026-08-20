@@ -31,7 +31,7 @@ export function OutingContextStrip({
   return (
     <div
       className={cn(
-        "fintech-card relative overflow-hidden p-4 sm:p-5",
+        "fintech-card group relative overflow-hidden p-4 sm:p-5 transition-colors hover:border-primary/40",
         context.mode === "planning" && context.isUrgent && "border-primary/40 bg-primary/5"
       )}
     >
@@ -39,6 +39,17 @@ export function OutingContextStrip({
         className="absolute inset-y-0 left-0 w-1"
         style={{ backgroundColor: accent }}
         aria-hidden
+      />
+
+      {/*
+        The whole strip opens the outing. A stretched overlay rather than a
+        wrapping <a>, because the Add-transaction button inside is itself a
+        link and anchors cannot nest — it sits one layer above this one.
+      */}
+      <Link
+        to={`/outings/${outing.id}`}
+        aria-label={`Open ${outing.name}`}
+        className="absolute inset-0 z-10 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
       />
 
       <div className="flex flex-col gap-3 pl-3 sm:flex-row sm:items-center sm:justify-between">
@@ -49,12 +60,9 @@ export function OutingContextStrip({
             ) : (
               <CalendarClock className="h-4 w-4 shrink-0 text-primary" />
             )}
-            <Link
-              to={`/outings/${outing.id}`}
-              className="truncate font-semibold text-foreground hover:underline"
-            >
+            <span className="truncate font-semibold text-foreground group-hover:underline">
               {outing.name}
-            </Link>
+            </span>
             {outing.pinned && (
               <Pin className="h-3 w-3 shrink-0 fill-current text-primary" aria-label="Pinned" />
             )}
@@ -77,7 +85,7 @@ export function OutingContextStrip({
 
         <Link
           to={`/outings/${outing.id}?add=1`}
-          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          className="relative z-20 inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
           {"Add transaction"}
@@ -134,16 +142,6 @@ export function OutingContextStrip({
                 : `${formatCurrency(context.budgetLeft ?? 0)} left`}
             </span>
           </div>
-
-          {context.projectedOverBy != null && (
-            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>
-                At {formatCurrency(context.burnPerDay ?? 0)}/day you&apos;ll finish{" "}
-                <strong>{formatCurrency(context.projectedOverBy)}</strong> over budget.
-              </span>
-            </p>
-          )}
         </div>
       )}
     </div>
@@ -235,7 +233,7 @@ function HomeStrip({
 
         <Link
           to="/outings"
-          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          className="relative z-20 inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" /> Plan an outing
         </Link>

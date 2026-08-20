@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   Map, Receipt, Plus, UserPlus, Wallet,
   CreditCard, Scale, ArrowDownLeft, ArrowUpRight,
+  CheckCircle2, PieChart as PieChartIcon,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -24,12 +25,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { DashboardStatsSkeleton } from "@/components/skeletons";
 import { useChartTheme } from "@/hooks/useChartTheme";
 import { getTimeGreeting } from "@/lib/greeting";
-import {
-  getFirstName,
-  possessiveLabel,
-  formatPayTo,
-  formatReturnFrom,
-} from "@/lib/displayNames";
+import { getFirstName, possessiveLabel } from "@/lib/displayNames";
 import {
   getOutingExpenseBreakdown,
   getTransactionDate,
@@ -263,11 +259,42 @@ export default function Dashboard() {
     },
     [updateOuting]
   );
-  // Net position across every open outing. Two-directional, so it carries the
-  // neutral name: "Return Amount" only reads correctly when money is coming back.
-  const netBalance = dashboardStats.totalBalance;
-  const isNetPositive = netBalance > 0;
-  const isNetNegative = netBalance < 0;
+  /**
+   * Card 1 at home: what you have already closed out.
+   *
+   * The combined net figure used to live here, but it is just To Collect minus
+   * To Pay — both of which are still on the row — so nothing is lost, and a
+   * dashboard with no outing running has something to say about the past.
+   */
+  const completedSummary = useMemo(() => {
+    const done = outings.filter((o) => o.status === "settled");
+    const latest = [...done].sort(
+      (a, b) => getOutingDate(b).getTime() - getOutingDate(a).getTime()
+    )[0];
+    if (!latest) return { count: 0, subtitle: "Nothing finished yet" };
+
+    const days = Math.max(
+      Math.round((Date.now() - getOutingDate(latest).getTime()) / 86_400_000),
+      0
+    );
+    const when = days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+    return { count: done.length, subtitle: `${latest.name} · ${when}` };
+  }, [outings]);
+
+  /** Everything the leading outing has cost, so My Share has something to sit against. */
+  const contextOutingTotal = useMemo(() => {
+    if (!contextOuting) return 0;
+    return activeTransactions
+      .filter((t) => t.outingId === contextOuting.id)
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [activeTransactions, contextOuting]);
+
+  const shareSubtitle = useMemo(() => {
+    if (!activeOutingSpend || !contextOuting) return null;
+    if (contextOutingTotal <= 0) return "No expenses yet";
+    const pct = Math.round((activeOutingSpend.share / contextOutingTotal) * 100);
+    return `${pct}% of ${formatCurrency(contextOutingTotal)}`;
+  }, [activeOutingSpend, contextOuting, contextOutingTotal]);
 
 
   if (error) {
@@ -340,22 +367,28 @@ export default function Dashboard() {
         className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4"
       >
         <motion.div variants={fadeUp} className="h-full">
-          <StatCard
-            title="Net Balance"
-            value={Math.abs(netBalance)}
-            prefix={`${isNetNegative ? "-" : ""}${getCurrencySymbol()}`}
-            icon={Scale}
-            variant={
-              isNetNegative ? "destructive" : isNetPositive ? "success" : "default"
-            }
-            subtitle={
-              isNetNegative
-                ? formatPayTo(Math.abs(netBalance))
-                : isNetPositive
-                  ? formatReturnFrom(netBalance)
-                  : "All settled"
-            }
-          />
+          {activeOutingSpend && contextOuting ? (
+            <StatCard
+              title="My Share"
+              value={activeOutingSpend.share}
+              prefix={getCurrencySymbol()}
+              icon={PieChartIcon}
+              variant="default"
+              subtitle={shareSubtitle ?? undefined}
+              onClick={() => navigate(`/outings/${contextOuting.id}`)}
+            />
+          ) : (
+            <StatCard
+              title="Completed Outings"
+              value={completedSummary.count}
+              icon={CheckCircle2}
+              variant={completedSummary.count > 0 ? "success" : "default"}
+              subtitle={completedSummary.subtitle}
+              onClick={
+                completedSummary.count > 0 ? () => navigate("/reports") : undefined
+              }
+            />
+          )}
         </motion.div>
 
         <motion.div variants={fadeUp} className="h-full">
