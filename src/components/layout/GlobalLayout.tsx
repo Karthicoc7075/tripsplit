@@ -30,7 +30,7 @@ import { SyncStatus } from "@/components/SyncStatus";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
-import flaticonImg from "@/assets/vite.png";
+import logoImg from "@/assets/logo.png";
 
 export default function GlobalLayout() {
   const { user, signOut } = useAuth();
@@ -81,15 +81,26 @@ export default function GlobalLayout() {
               className="flex shrink-0 items-center gap-1.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               {/* Header is h-16; the mark stays well inside it so it never
-                  touches the top border or the bottom divider. */}
+                  touches the top border or the bottom divider.
+
+                  `w-auto`, not a square box: the artwork is taller than it is
+                  wide, so a w-9 box would letterbox it and reintroduce the
+                  dead space this file was cropped to remove. */}
               <img
-                src={flaticonImg}
+                src={logoImg}
                 alt=""
                 aria-hidden
-                className="h-9 w-9 shrink-0 object-contain sm:h-10 sm:w-10"
+                className="h-8 w-auto shrink-0 sm:h-9"
               />
               <span className="hidden whitespace-nowrap text-lg font-bold min-[380px]:inline">
                 <span style={{ color: "#276ACF" }}>Trip</span><span style={{ color: "#3AA91F" }}>Split</span>
+              </span>
+              {/* The wordmark disappears under 380px, so the beta tag rides
+                  along with it rather than floating beside a bare icon.
+                  -translate-y sits it against the wordmark's cap height
+                  instead of its optical centre, like a superscript. */}
+              <span className="hidden -translate-y-1 rounded-md border border-primary/40 bg-primary/10 px-1 py-px text-[9px] font-bold uppercase leading-[1.4] tracking-[0.12em] text-primary min-[380px]:inline-block">
+                Beta
               </span>
             </NavLink>
 
