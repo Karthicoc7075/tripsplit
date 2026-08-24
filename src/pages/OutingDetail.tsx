@@ -13,9 +13,15 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 import { PremiumTabs, PremiumTabsContent, PremiumTabsList, PremiumTabsTrigger } from "@/components/fintech/PremiumTabs";
 import { StatCard } from "@/components/fintech/StatCard";
-import { formatCurrency, formatRelativeTime, getCurrencySymbol } from "@/lib/format";
+import {
+  formatCurrency,
+  formatRelativeTime,
+  getCurrencySymbol,
+  toDisplayDate,
+} from "@/lib/format";
 import { formatOutingDates, getMemberCashFlow, isOutingCreator } from "@/lib/outing";
 import { isPrematurelySettled } from "@/lib/dashboardContext";
+import { compareTransactionsByDateDesc } from "@/lib/dashboard";
 import { getOutingMembers } from "@/lib/members";
 import { memberLabel } from "@/lib/displayNames";
 import { getOutingMemberIds } from "@/lib/members";
@@ -93,7 +99,7 @@ export default function OutingDetail() {
     () =>
       allTransactions
         .filter((t) => t.outingId === (id ?? ""))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+        .sort(compareTransactionsByDateDesc),
     [allTransactions, id]
   );
 
@@ -292,7 +298,10 @@ export default function OutingDetail() {
         splitMode: values.splitMode,
         splits,
         category: values.category,
-        date: values.date,
+        date: toDisplayDate(values.date),
+        // Written even when blank: an empty string clears a time the user
+        // removed, where `undefined` would be stripped and leave the old one.
+        time: values.time,
       });
       toast.success("Transaction updated", offlineNote());
       resetTxModal();
@@ -313,6 +322,7 @@ export default function OutingDetail() {
       customSplits: splits,
       category: values.category,
       date: values.date,
+      time: values.time,
     });
 
     setShowSuccess(false);

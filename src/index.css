@@ -106,6 +106,35 @@
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;
   }
+
+  /* The calendar/clock button inside <input type="date"|"time"> is drawn by
+     the browser in near-black and cannot be styled directly, so on a dark
+     field it all but disappears. Inverting flips it to near-white; the light
+     theme is left alone because the default already reads there. */
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  .dark input[type="month"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.75;
+    cursor: pointer;
+  }
+
+  .dark input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="month"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
+  /* Firefox has no picker-indicator pseudo-element; `color-scheme` is what
+     tells it (and Safari's own field chrome) to paint dark-theme controls. */
+  .dark input[type="date"],
+  .dark input[type="time"],
+  .dark input[type="datetime-local"],
+  .dark input[type="month"] {
+    color-scheme: dark;
+  }
 }
 
 @layer components {

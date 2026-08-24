@@ -29,6 +29,42 @@ export function parseLocalDate(value?: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/**
+ * "2026-08-24" → "24 Aug 2026", the shape stored on `Transaction.date`.
+ *
+ * Shared by the add and edit paths so editing an expense does not quietly
+ * rewrite its date into a different format than the one it was created with.
+ */
+export function toDisplayDate(value?: string): string {
+  const parsed = parseLocalDate(value) ?? new Date();
+  return parsed.toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** "HH:MM" for the local wall clock, the format <input type="time"> uses. */
+export function toLocalTimeInput(date: Date = new Date()): string {
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Parses "HH:MM" into hours/minutes; null for anything else. */
+export function parseTimeInput(value?: string): { hours: number; minutes: number } | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return { hours, minutes };
+}
+
+/** "17:20" → "5:20 PM". Returns the raw value if it is not a clock time. */
+export function formatClockTime(value?: string): string {
+  const parsed = parseTimeInput(value);
+  if (!parsed) return value ?? "";
+  const d = new Date(2000, 0, 1, parsed.hours, parsed.minutes);
+  return d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+}
+
 export function roundMoney(amount: number): number {
   return Math.round(amount * 100) / 100;
 }

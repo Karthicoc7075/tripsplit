@@ -15,7 +15,13 @@ import {
 } from "@/types";
 import { cn } from "@/lib/utils";
 import { useData } from "@/context/DataContext";
-import { toLocalDateInput, formatCurrency, getCurrencySymbol } from "@/lib/format";
+import {
+  toLocalDateInput,
+  toLocalTimeInput,
+  parseLocalDate,
+  formatCurrency,
+  getCurrencySymbol,
+} from "@/lib/format";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 
@@ -25,6 +31,8 @@ export interface TransactionFormValues {
   amount: number;
   category: string;
   date: string;
+  /** "HH:MM" clock time of the spend; empty when the user cleared it. */
+  time: string;
   payerMode: "alone" | "multiple";
   paidById: string;
   payments: TransactionPayment[];
@@ -44,6 +52,10 @@ function todayIso(): string {
   return toLocalDateInput();
 }
 
+function nowTime(): string {
+  return toLocalTimeInput();
+}
+
 export function AddTransactionForm({
   outing,
   currentUserId,
@@ -55,10 +67,15 @@ export function AddTransactionForm({
   const [description, setDescription] = useState(editingTx?.description ?? "");
   const [amount, setAmount] = useState(editingTx ? String(editingTx.amount) : "");
   const [category, setCategory] = useState(editingTx?.category ?? "Food");
+  // The expense date, not `createdAt` — prefilling from when the row was typed
+  // in silently moved a back-dated expense to its entry day on every save.
   const [date, setDate] = useState(
-    editingTx?.date
-      ? toLocalDateInput(new Date(editingTx.createdAt))
-      : todayIso()
+    editingTx ? toLocalDateInput(parseLocalDate(editingTx.date) ?? new Date(editingTx.createdAt)) : todayIso()
+  );
+  // Back-dated expenses need their own time — `createdAt` is when the row was
+  // typed in. Older records kept no time, so editing one falls back to that.
+  const [time, setTime] = useState(
+    editingTx ? editingTx.time ?? toLocalTimeInput(new Date(editingTx.createdAt)) : nowTime()
   );
   const [payerMode, setPayerMode] = useState<"alone" | "multiple">(
     editingTx?.payments && editingTx.payments.length > 1 ? "multiple" : "alone"
@@ -190,6 +207,10 @@ export function AddTransactionForm({
     });
   };
 
+  // A past date makes the time meaningful — say so instead of leaving "now"
+  // silently attached to an expense from three days ago.
+  const isBackdated = date !== todayIso();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !totalAmount || paymentsMismatch) return;
@@ -201,6 +222,7 @@ export function AddTransactionForm({
       amount: totalAmount,
       category,
       date,
+      time,
       payerMode,
       paidById: payerMode === "alone" ? paidById : selectedPayers[0],
       payments: buildPayments(),
@@ -248,6 +270,21 @@ export function AddTransactionForm({
           <Label>Date</Label>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Time</Label>
+        <Input
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          className="sm:max-w-[12rem]"
+        />
+        <p className="text-xs text-muted-foreground">
+          {isBackdated
+            ? "Set when this expense actually happened so it lands in the right order."
+            : "Defaults to now — change it if the expense happened earlier."}
+        </p>
       </div>
 
       <div className="space-y-2">

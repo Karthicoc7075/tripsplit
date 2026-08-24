@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { useData } from "@/context/DataContext";
 import { computeFriendBalances } from "@/lib/balances";
-import { getCategoryBreakdown } from "@/lib/dashboard";
+import { getCategoryBreakdown, getTransactionDate } from "@/lib/dashboard";
 import {
   applyOutingFilters,
   buildOutingMemory,
   getAvailableYears,
   getOutingDate,
   groupOutingsByMonth,
+  hasActiveFilters,
   isRealOuting,
   type MemorySection,
   type OutingMemory,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/reportFilters";
 import {
   filterTransactionsByPeriod,
+  getPeriodStart,
   getReportSummary,
   getSpendingTrendForPeriod,
 } from "@/lib/reports";
@@ -256,6 +258,57 @@ export function useReportData(filters: ReportFilters) {
     ]
   );
 
+  // ── Export scope
+  /**
+   * Ledger entries whose outing no longer exists — the report lists them under
+   * "Normal Transactions". Anything belonging to a hidden backup outing still
+   * has its outing, so it is not swept in here.
+   */
+  const unlinkedTransactions = useMemo(() => {
+    const known = new Set(outings.map((o) => o.id));
+    return transactions.filter((t) => !known.has(t.outingId));
+  }, [outings, transactions]);
+
+  const unlinkedSettlements = useMemo(() => {
+    const known = new Set(outings.map((o) => o.id));
+    return settlementRecords.filter((r) => !known.has(r.outingId));
+  }, [outings, settlementRecords]);
+
+  /**
+   * Exactly what an export is allowed to contain.
+   *
+   * Every filter on the page narrows it, including the period window that the
+   * Insights tab uses — a report pulled under "3 Months" must not quietly ship
+   * three years of expenses. Entries with no outing can never satisfy an
+   * outing-scoped filter, so they drop out as soon as one is set.
+   */
+  const exportScope = useMemo(() => {
+    const start = getPeriodStart(filters.period);
+    const inPeriod = (date: Date) => !start || date >= start;
+    const outingScoped = hasActiveFilters(filters);
+
+    return {
+      outings: filteredOutings,
+      transactions: [
+        ...filteredTransactions,
+        ...(outingScoped ? [] : unlinkedTransactions),
+      ].filter((t) => inPeriod(getTransactionDate(t))),
+      settlements: [
+        ...filteredSettlements,
+        ...(outingScoped ? [] : unlinkedSettlements),
+      ].filter((r) => inPeriod(new Date(r.createdAt))),
+      /** True when the export is a slice rather than the whole history. */
+      narrowed: outingScoped || filters.period !== "all",
+    };
+  }, [
+    filters,
+    filteredOutings,
+    filteredTransactions,
+    filteredSettlements,
+    unlinkedTransactions,
+    unlinkedSettlements,
+  ]);
+
   const sortedFriends = useMemo(
     () =>
       [...friends].sort(
@@ -276,6 +329,7 @@ export function useReportData(filters: ReportFilters) {
     availableMembers,
     filteredOutings,
     filteredTransactions,
+    exportScope,
     sections,
     memories,
     yearReview,

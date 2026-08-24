@@ -1,6 +1,11 @@
 import { Pencil, Trash2, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDateTime, formatRelativeTime } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDateTime,
+  formatRelativeTime,
+  formatClockTime,
+} from "@/lib/format";
 import type { Transaction, OutingMember } from "@/types";
 import { possessiveLabel, memberLabel } from "@/lib/displayNames";
 import { cn } from "@/lib/utils";
@@ -76,7 +81,10 @@ export function TransactionDetailPanel({
 
       <div className="fintech-card px-4 py-1">
         <DetailRow label="Category" value={tx.category ?? "Other"} />
-        <DetailRow label="Expense date" value={tx.date} />
+        <DetailRow
+          label="Expense date"
+          value={tx.time ? `${tx.date} · ${formatClockTime(tx.time)}` : tx.date}
+        />
         <DetailRow
           label={payers.length > 1 ? `Paid by (${payers.length})` : "Paid by"}
           value={paidByLabel}

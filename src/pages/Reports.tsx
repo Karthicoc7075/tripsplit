@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Download, Loader2, Receipt, Map, Users, Wallet, TrendingUp, Search,
-  Printer, FileJson, X, Sparkles, ArrowUpRight, PieChart as PieChartIcon,
+  FileText, X, Sparkles, ArrowUpRight, PieChart as PieChartIcon,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { useData } from "@/context/DataContext";
+import { useAuth } from "@/context/AuthContext";
 import { StatCard } from "@/components/fintech/StatCard";
 import { FilterChips } from "@/components/fintech/FilterChips";
 import { EmptyState } from "@/components/EmptyState";
@@ -24,14 +25,13 @@ import {
 } from "@/components/fintech/PremiumTabs";
 import { useChartTheme } from "@/hooks/useChartTheme";
 import { useReportData } from "@/hooks/useReportData";
-import { formatCurrency, formatCompact, getCurrencySymbol } from "@/lib/format";
+import { formatCurrency, formatCompact, getCurrencySymbol, getCurrencyCode } from "@/lib/format";
 import { getFirstName, possessiveLabel } from "@/lib/displayNames";
 import { getBalanceLabel } from "@/lib/friends";
 import { getCategoryColor } from "@/types";
 import { cn } from "@/lib/utils";
-import {
-  buildReportCsv, buildReportJson, downloadCsv, downloadFile,
-} from "@/lib/reports";
+import { downloadCsv } from "@/lib/reports";
+import { buildExportModel, buildTransactionsCsv, type ExportMeta } from "@/lib/reportExport";
 import {
   DEFAULT_FILTERS, parseReportFilters,
   serializeReportFilters, type ReportFilters, type ReportTab,
@@ -60,8 +60,9 @@ export default function Reports() {
   const navigate = useNavigate();
   const chart = useChartTheme();
   const { updateOuting, error, retry } = useData();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [exporting, setExporting] = useState<"csv" | "json" | null>(null);
+  const [exporting, setExporting] = useState<"csv" | "pdf" | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   // All page state lives in the URL, so every view is shareable and survives a
@@ -83,9 +84,9 @@ export default function Reports() {
 
   const data = useReportData(filters);
   const {
-    loading, currentUserName, friends, hasAnyOutings, availableYears,
+    loading, currentUserId, currentUserName, friends, hasAnyOutings, availableYears,
     availableCategories, availableMembers, filteredOutings, filteredTransactions,
-    sections, memories, yearReview, summary, categoryData, spendingTrend,
+    exportScope, sections, memories, yearReview, summary, categoryData, spendingTrend,
     outingRankings, friendBalances, sortedFriends,
   } = data;
 
@@ -101,34 +102,63 @@ export default function Reports() {
     [updateOuting]
   );
 
-  const exportPayload = useMemo(
-    () => ({
-      period: filters.period,
-      summary,
-      outingRankings,
-      categoryData,
-      friends,
-      friendBalances,
-    }),
-    [filters.period, summary, outingRankings, categoryData, friends, friendBalances]
+  /**
+   * Exports exactly what the filters select — period included — so a report
+   * can never contain more than the view it was pulled from.
+   */
+  const exportModel = useMemo(
+    () =>
+      buildExportModel({
+        outings: exportScope.outings,
+        transactions: exportScope.transactions,
+        settlements: exportScope.settlements,
+        currentUserId,
+        dropEmptyOutings: exportScope.narrowed,
+      }),
+    [exportScope, currentUserId]
   );
 
-  const handleExport = async (format: "csv" | "json") => {
+  /** Spells out the filters on the cover so the file says what it contains. */
+  const filtersLabel = useMemo(() => {
+    const memberName = availableMembers.find((m) => m.id === filters.memberId)?.name;
+    return [
+      `Period: ${PERIOD_OPTIONS.find((p) => p.value === filters.period)?.label ?? "All Time"}`,
+      filters.year !== "all" && `Year: ${filters.year}`,
+      filters.category !== "all" && `Category: ${filters.category}`,
+      filters.memberId !== "all" && `Member: ${memberName ?? filters.memberId}`,
+      filters.query.trim() && `Search: "${filters.query.trim()}"`,
+      filters.includeArchived && "Includes archived outings",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }, [filters, availableMembers]);
+
+  const buildExportMeta = useCallback(
+    (): ExportMeta => ({
+      userName: user?.displayName ?? user?.email ?? currentUserName,
+      joinedAt: user?.metadata?.creationTime
+        ? new Date(user.metadata.creationTime).toISOString()
+        : null,
+      generatedAt: new Date(),
+      // The count of outings actually in the file, not of the whole account.
+      outingCount: exportModel.sections.length,
+      filtersLabel,
+      currencyCode: getCurrencyCode(),
+    }),
+    [user, currentUserName, exportModel.sections.length, filtersLabel]
+  );
+
+  const handleExport = async (format: "csv" | "pdf") => {
     setExporting(format);
     try {
+      const meta = buildExportMeta();
       const stamp = new Date().toISOString().slice(0, 10);
       if (format === "csv") {
-        downloadCsv(`tripsplit-report-${stamp}.csv`, buildReportCsv(exportPayload));
+        downloadCsv(`TripSplit_Report_${stamp}.csv`, buildTransactionsCsv(exportModel, meta));
       } else {
-        downloadFile(
-          `tripsplit-report-${stamp}.json`,
-          buildReportJson({
-            ...exportPayload,
-            outings: filteredOutings,
-            transactions: filteredTransactions,
-          }),
-          "application/json"
-        );
+        // Loaded on demand — jsPDF is far too heavy to sit in the main bundle.
+        const { downloadReportPdf } = await import("@/lib/reportPdf");
+        downloadReportPdf(exportModel, meta, `TripSplit_Report_${stamp}.pdf`);
       }
       toast.success(`Exported as ${format.toUpperCase()}`);
     } catch {
@@ -192,25 +222,22 @@ export default function Reports() {
       >
         <PageTitle />
         <div className="flex flex-wrap gap-2" data-print-hide>
-          <Button variant="outline" className="h-11 gap-2" onClick={() => window.print()}>
-            <Printer size={16} /> Print
-          </Button>
           <Button
             variant="outline"
             className="h-11 gap-2"
-            onClick={() => handleExport("json")}
-            disabled={exporting !== null}
-          >
-            {exporting === "json" ? <Loader2 size={16} className="animate-spin" /> : <FileJson size={16} />}
-            JSON
-          </Button>
-          <Button
-            className="h-11 gap-2 shadow-md shadow-primary/20"
             onClick={() => handleExport("csv")}
             disabled={exporting !== null}
           >
             {exporting === "csv" ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
             CSV
+          </Button>
+          <Button
+            className="h-11 gap-2 shadow-md shadow-primary/20"
+            onClick={() => handleExport("pdf")}
+            disabled={exporting !== null}
+          >
+            {exporting === "pdf" ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+            PDF
           </Button>
         </div>
       </motion.div>

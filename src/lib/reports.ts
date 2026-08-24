@@ -1,4 +1,4 @@
-import type { Transaction, Outing, Friend } from "@/types";
+import type { Transaction, Outing } from "@/types";
 import { getMemberPaidAndShare } from "@/lib/outing";
 import { getCategoryBreakdown, getSpendingTrend, getTransactionDate } from "@/lib/dashboard";
 import { roundMoney } from "@/lib/format";
@@ -11,7 +11,8 @@ const PERIOD_MONTHS: Record<Exclude<ReportPeriod, "all">, number> = {
   "12m": 12,
 };
 
-function getPeriodStart(period: ReportPeriod): Date | null {
+/** First day of the window, or null for "all time". */
+export function getPeriodStart(period: ReportPeriod): Date | null {
   if (period === "all") return null;
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth() - (PERIOD_MONTHS[period] - 1), 1);
@@ -117,83 +118,6 @@ export function getSpendingTrendForPeriod(
 ) {
   const months = period === "all" ? 12 : PERIOD_MONTHS[period];
   return getSpendingTrend(transactions, userId, months);
-}
-
-export function buildReportCsv(params: {
-  period: ReportPeriod;
-  summary: ReportSummary;
-  outingRankings: OutingRanking[];
-  categoryData: { name: string; value: number }[];
-  friends: Friend[];
-  friendBalances: Map<string, number>;
-}): string {
-  const { period, summary, outingRankings, categoryData, friends, friendBalances } = params;
-  const lines: string[] = [
-    "TripSplit Report",
-    `Period,${period}`,
-    `Generated,${new Date().toISOString()}`,
-    "",
-    "Summary",
-    `Total Expenses,${summary.totalExpenses}`,
-    `You Paid,${summary.youPaid}`,
-    `Your Share,${summary.yourShare}`,
-    `Transactions,${summary.transactionCount}`,
-    `Outings,${summary.activeOutings}`,
-    "",
-    "Outing Rankings",
-    "Outing,Category,Total Spent,Your Share,Transactions,Share %",
-    ...outingRankings.map(
-      (o) =>
-        `"${o.name}",${o.category},${o.spent},${o.share},${o.transactionCount},${o.percent}%`
-    ),
-    "",
-    "Category Breakdown",
-    "Category,Amount",
-    ...categoryData.map((c) => `${c.name},${c.value}`),
-    "",
-    "Friend Balances",
-    "Friend,Email,Net Balance",
-    ...friends.map((f) => {
-      const bal = friendBalances.get(f.id) ?? 0;
-      return `"${f.name}",${f.email},${bal}`;
-    }),
-  ];
-  return lines.join("\n");
-}
-
-/** Machine-readable sibling of the CSV — restorable, and safe to diff. */
-export function buildReportJson(params: {
-  period: ReportPeriod;
-  summary: ReportSummary;
-  outingRankings: OutingRanking[];
-  categoryData: { name: string; value: number }[];
-  friends: Friend[];
-  friendBalances: Map<string, number>;
-  outings?: Outing[];
-  transactions?: Transaction[];
-}): string {
-  return JSON.stringify(
-    {
-      app: "TripSplit",
-      kind: "report",
-      version: 1,
-      generatedAt: new Date().toISOString(),
-      period: params.period,
-      summary: params.summary,
-      outings: params.outingRankings,
-      categories: params.categoryData,
-      friends: params.friends.map((f) => ({
-        id: f.id,
-        name: f.name,
-        email: f.email,
-        netBalance: params.friendBalances.get(f.id) ?? 0,
-      })),
-      transactions: params.transactions,
-      outingDetails: params.outings,
-    },
-    null,
-    2
-  );
 }
 
 export function downloadFile(filename: string, content: string, mime: string) {

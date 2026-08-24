@@ -151,6 +151,14 @@ export interface Transaction {
   paidByName: string;
   payments?: TransactionPayment[];
   date: string;
+  /**
+   * Clock time of the spend as "HH:MM" (24h, local), when the user set one.
+   *
+   * `createdAt` only says when the expense was typed in, which is wrong for a
+   * back-dated entry — logging last night's dinner this morning would order and
+   * label it at this morning's time. Optional: older records have none.
+   */
+  time?: string;
   category?: string;
   splitMode: SplitMode;
   splits: TransactionSplit[];

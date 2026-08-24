@@ -1,6 +1,6 @@
 import type { SettlementRecord, Transaction, Outing } from "@/types";
 import type { ActivityItem } from "@/components/dashboard/ActivityFeed";
-import { formatCurrency, formatRelativeTime } from "@/lib/format";
+import { formatCurrency, formatRelativeTime, parseTimeInput } from "@/lib/format";
 import { getFirstName, memberLabel } from "@/lib/displayNames";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -26,6 +26,53 @@ export function getTransactionDate(tx: Transaction): Date {
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
   return new Date(tx.createdAt);
+}
+
+/** Local midnight of a date — the unit a day-grouped list actually sorts by. */
+function dayStart(d: Date): number {
+  const t = d.getTime();
+  if (Number.isNaN(t)) return 0;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * The exact moment of the spend: the expense day plus a clock time.
+ *
+ * The clock comes from `tx.time` when the user set one. Without it, `createdAt`
+ * only stands in while it falls on the same day — for a back-dated entry it is
+ * the moment it was typed in, which says nothing about when the money went out,
+ * so those sort to the start of their day rather than pretending to a time.
+ */
+export function getTransactionInstant(tx: Transaction): Date {
+  const day = getTransactionDate(tx);
+  const midnight = new Date(dayStart(day));
+
+  const explicit = parseTimeInput(tx.time);
+  if (explicit) {
+    midnight.setHours(explicit.hours, explicit.minutes, 0, 0);
+    return midnight;
+  }
+
+  const created = new Date(tx.createdAt);
+  if (!Number.isNaN(created.getTime()) && dayStart(created) === midnight.getTime()) return created;
+
+  return midnight;
+}
+
+/**
+ * Newest-first order for a day-grouped transaction list.
+ *
+ * Sorting by `createdAt` alone breaks the day headers: log a yesterday-dated
+ * expense today and it lands above today's spends while still grouping under
+ * "Yesterday", so the list shows Today → Yesterday → Today. Order by the spend
+ * day first, then by the time of the spend, so rows inside a day read
+ * newest-first alongside the time each row prints. `createdAt` only breaks ties
+ * between two spends stamped at the same minute.
+ */
+export function compareTransactionsByDateDesc(a: Transaction, b: Transaction): number {
+  const instantDiff = getTransactionInstant(b).getTime() - getTransactionInstant(a).getTime();
+  if (instantDiff !== 0) return instantDiff;
+  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 }
 
 function isCurrentMonth(date: Date): boolean {

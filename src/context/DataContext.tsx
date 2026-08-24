@@ -34,6 +34,7 @@ import {
   getOutingTotalSpent,
   getMemberBalance,
 } from "@/lib/balances";
+import { toDisplayDate } from "@/lib/format";
 import {
   subscribeToUserData,
   ensureUserProfile,
@@ -114,8 +115,9 @@ interface DataContextType {
     receiptUrl?: string;
     category?: string;
     date?: string;
+    time?: string;
   }) => Transaction;
-  updateTransaction: (id: string, updates: Partial<Pick<Transaction, "title" | "description" | "amount" | "paidById" | "payments" | "splitMode" | "splits" | "receiptUrl" | "category" | "date">>) => void;
+  updateTransaction: (id: string, updates: Partial<Pick<Transaction, "title" | "description" | "amount" | "paidById" | "payments" | "splitMode" | "splits" | "receiptUrl" | "category" | "date" | "time">>) => void;
   deleteTransaction: (id: string) => void;
   undoLastAction: () => void;
   forceBackupOuting: (outingId: string) => Promise<string | null>;
@@ -591,6 +593,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       receiptUrl?: string;
       category?: string;
       date?: string;
+      time?: string;
     }) => {
       if (!currentUserId) throw new Error("Not authenticated");
 
@@ -611,9 +614,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         txData.customSplits
       );
 
-      const txDate = txData.date
-        ? new Date(txData.date).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })
-        : new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" });
+      const txDate = toDisplayDate(txData.date);
 
       const tx: Transaction = {
         id: crypto.randomUUID(),
@@ -625,6 +626,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         paidByName,
         payments,
         date: txDate,
+        time: txData.time || undefined,
         category: txData.category,
         splitMode: txData.splitMode,
         splits,
@@ -649,7 +651,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 
   const updateTransaction = useCallback(
-    (id: string, updates: Partial<Pick<Transaction, "title" | "description" | "amount" | "paidById" | "payments" | "splitMode" | "splits" | "receiptUrl" | "category" | "date">>) => {
+    (id: string, updates: Partial<Pick<Transaction, "title" | "description" | "amount" | "paidById" | "payments" | "splitMode" | "splits" | "receiptUrl" | "category" | "date" | "time">>) => {
       if (!currentUserId) return;
 
       const tx = data.transactions.find((t) => t.id === id);
@@ -684,6 +686,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         receiptUrl: updated.receiptUrl,
         category: updated.category,
         date: updated.date,
+        time: updated.time,
       }).catch(console.error);
       scheduleBackup(tx.outingId);
     },
