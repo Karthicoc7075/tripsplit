@@ -76,6 +76,73 @@ export function deriveOutingStatus(
   return "ongoing";
 }
 
+/** Last calendar day the outing covers. Null when it carries no dates at all. */
+export function getOutingEndDay(outing: Outing): Date | null {
+  const parsed = parseLocalDate(outing.endDate) ?? parseLocalDate(outing.startDate);
+  return parsed ? startOfDay(parsed) : null;
+}
+
+/**
+ * Whether the outing's last day is already behind us.
+ *
+ * An outing with no dates never ends on its own — there is nothing to compare
+ * against, so it stays active until someone closes it by hand.
+ */
+export function hasOutingEnded(outing: Outing, today: Date = new Date()): boolean {
+  const end = getOutingEndDay(outing);
+  return end != null && end.getTime() < startOfDay(today).getTime();
+}
+
+/** Whole days since the outing finished; 0 on the day after it ended. */
+export function daysSinceOutingEnded(outing: Outing, today: Date = new Date()): number | null {
+  const end = getOutingEndDay(outing);
+  if (end == null) return null;
+  return Math.round((startOfDay(today).getTime() - end.getTime()) / 86_400_000);
+}
+
+/**
+ * How a finished outing landed against the budget it was given.
+ *
+ * `savedPct` and `overPct` are both shares of the *budget*, not of the spend,
+ * so "20% under" and "20% over" mean the same size of miss in either direction.
+ */
+export interface BudgetOutcome {
+  budget: number;
+  spent: number;
+  /** Money left unspent. 0 once the budget is blown. */
+  saved: number;
+  /** `saved` as a percentage of the budget (0–100). */
+  savedPct: number;
+  /** Money spent past the budget. 0 while still inside it. */
+  overBy: number;
+  /** `overBy` as a percentage of the budget. */
+  overPct: number;
+  isOver: boolean;
+  /** Share of the budget actually spent, capped at 100 for the meter. */
+  usedPct: number;
+}
+
+export function getBudgetOutcome(budget?: number, spent = 0): BudgetOutcome | null {
+  if (!budget || budget <= 0) return null;
+
+  const diff = roundMoney(budget - spent);
+  const isOver = diff < 0;
+  const saved = isOver ? 0 : diff;
+  const overBy = isOver ? Math.abs(diff) : 0;
+  const pct = (value: number) => Math.round((value / budget) * 1000) / 10;
+
+  return {
+    budget: roundMoney(budget),
+    spent: roundMoney(spent),
+    saved,
+    savedPct: pct(saved),
+    overBy,
+    overPct: pct(overBy),
+    isOver,
+    usedPct: Math.min(pct(spent), 100),
+  };
+}
+
 export function getOutingStatusLabel(status: Outing["status"]): string {
   switch (status) {
     case "planned":

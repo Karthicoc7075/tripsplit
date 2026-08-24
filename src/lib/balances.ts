@@ -144,6 +144,24 @@ export function isOpenOuting(outing: Outing): boolean {
   return outing.status !== "settled";
 }
 
+/** Someone in this outing is still up or down more than rounding noise. */
+export function hasOutstandingBalance(balances: MemberBalance[]): boolean {
+  return balances.some((b) => Math.abs(b.balance) > 0.01);
+}
+
+/**
+ * Whether an outing's money still counts toward live balances.
+ *
+ * Marking an outing done says the trip is over — it does not move any money,
+ * and no settlement is recorded when the status flips. So a closed outing that
+ * is square drops out, while one closed with an amount still outstanding keeps
+ * counting: that debt is real, and hiding it made Friends read "all settled"
+ * while the friend's own page still listed the return.
+ */
+export function countsTowardLiveBalances(outing: Outing, balances: MemberBalance[]): boolean {
+  return isOpenOuting(outing) || hasOutstandingBalance(balances);
+}
+
 export function computeGlobalSettlements(
   outings: Outing[],
   allTransactions: Transaction[],
@@ -152,14 +170,15 @@ export function computeGlobalSettlements(
 ): Settlement[] {
   const settlements: Settlement[] = [];
 
-  // Settled outings are closed by an explicit user action, so they drop out of
-  // live debts here exactly as they do in computeDashboardStats. Without this
-  // the Dashboard said "all settled" while Friends still listed the debt.
-  for (const outing of outings.filter(isOpenOuting)) {
+  // A closed outing drops out only once its members are square — see
+  // countsTowardLiveBalances. Every surface uses that same rule so the
+  // Dashboard, Friends and a friend's own page can never disagree.
+  for (const outing of outings) {
     const txs = allTransactions.filter((t) => t.outingId === outing.id);
     const records = allSettlementRecords.filter((r) => r.outingId === outing.id);
     const members = getOutingMembers(outing);
     const balances = computeMemberBalances(members, txs, records);
+    if (!countsTowardLiveBalances(outing, balances)) continue;
     const edges = simplifyDebts(balances);
 
     for (const edge of edges) {
@@ -192,11 +211,12 @@ export function computeFriendBalances(
   const friendBalances = new Map<string, number>();
   friends.forEach((f) => friendBalances.set(f.id, 0));
 
-  for (const outing of outings.filter(isOpenOuting)) {
+  for (const outing of outings) {
     const txs = allTransactions.filter((t) => t.outingId === outing.id);
     const records = allSettlementRecords.filter((r) => r.outingId === outing.id);
     const members = getOutingMembers(outing);
     const balances = computeMemberBalances(members, txs, records);
+    if (!countsTowardLiveBalances(outing, balances)) continue;
 
     for (const member of members) {
       if (member.id === currentUserId) continue;
@@ -239,10 +259,11 @@ export function computeDashboardStats(
   const oweSet = new Set<string>();
   const owedSet = new Set<string>();
 
-  for (const outing of outings.filter(isOpenOuting)) {
+  for (const outing of outings) {
     const txs = allTransactions.filter((t) => t.outingId === outing.id);
     const records = allSettlementRecords.filter((r) => r.outingId === outing.id);
     const balances = computeMemberBalances(getOutingMembers(outing), txs, records);
+    if (!countsTowardLiveBalances(outing, balances)) continue;
     const userBal = balances.find((b) => b.memberId === currentUserId)?.balance ?? 0;
 
     if (userBal < 0) {

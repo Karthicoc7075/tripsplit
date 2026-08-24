@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft, Pencil, Receipt, Users, Plus,
   MapPin, Calendar, Trash2, PieChart, Download, Cloud, Wallet, ArrowDownLeft,
-  AlertTriangle, RotateCcw,
+  AlertTriangle, RotateCcw, CheckCircle2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { motion } from "framer-motion";
@@ -19,7 +19,7 @@ import {
   getCurrencySymbol,
   toDisplayDate,
 } from "@/lib/format";
-import { formatOutingDates, getMemberCashFlow, isOutingCreator } from "@/lib/outing";
+import { formatOutingDates, getMemberCashFlow, hasOutingEnded, isOutingCreator } from "@/lib/outing";
 import { isPrematurelySettled } from "@/lib/dashboardContext";
 import { compareTransactionsByDateDesc } from "@/lib/dashboard";
 import { getOutingMembers } from "@/lib/members";
@@ -47,6 +47,7 @@ import { BudgetCard } from "@/components/outings/BudgetCard";
 import { BudgetExceededModal } from "@/components/outings/BudgetExceededModal";
 import { OutingAnalysisTab } from "@/components/outings/OutingAnalysisTab";
 import { OutingStatusToggle } from "@/components/outings/OutingStatusToggle";
+import { OutingCompleteCard } from "@/components/outings/OutingCompleteCard";
 import { TransactionList } from "@/components/outings/TransactionList";
 import { OutingMembersPanel } from "@/components/outings/OutingMembersPanel";
 
@@ -65,6 +66,14 @@ import { computeSplits } from "@/lib/balances";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useOutingBackupMeta } from "@/hooks/useOutingBackupMeta";
 import { cn } from "@/lib/utils";
+
+/**
+ * Remembers that an outing's dates already closed it once.
+ *
+ * Set both when the auto-complete fires and when someone reopens by hand, so a
+ * deliberate "Active" is never undone by the same past end date.
+ */
+const autoCompleteKey = (outingId: string) => `tripsplit-auto-complete-${outingId}`;
 
 export default function OutingDetail() {
   const { id } = useParams();
@@ -391,6 +400,9 @@ export default function OutingDetail() {
 
   const handleStatusChange = (status: "ongoing" | "settled") => {
     if (!outing) return;
+    // Reopening by hand outranks the date: without this the auto-complete
+    // effect below would close the outing again on the next render.
+    if (status === "ongoing") localStorage.setItem(autoCompleteKey(outing.id), "1");
     updateOuting(outing.id, { status });
     toast.success(status === "settled" ? "Marked as done" : "Marked as active");
   };
@@ -398,6 +410,29 @@ export default function OutingDetail() {
   const isCreator = outing ? isOutingCreator(outing, currentUserId) : false;
   const isMember = outing ? getOutingMemberIds(outing).includes(currentUserId) : false;
   const canEditOuting = isCreator || isMember;
+
+  /** The trip's last day is behind us — planned/ongoing no longer describes it. */
+  const outingEnded = outing ? hasOutingEnded(outing) : false;
+  const isComplete = outingEnded || outing?.status === "settled";
+
+  /**
+   * Close the outing on its own once the end date passes.
+   *
+   * Only the creator writes it — every member opening the page would otherwise
+   * race on the same update — and only once per outing: the flag survives a
+   * manual reopen so the user's choice sticks. Money is untouched either way;
+   * a closed outing with an outstanding balance still counts towards balances
+   * (see countsTowardLiveBalances in lib/balances).
+   */
+  useEffect(() => {
+    if (!outing || loading || !outingEnded) return;
+    if (outing.status === "settled" || !isCreator) return;
+    const key = autoCompleteKey(outing.id);
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+    updateOuting(outing.id, { status: "settled" });
+    toast.success("Outing complete", { description: "Its dates have passed, so it's marked done." });
+  }, [outing, outingEnded, isCreator, loading, updateOuting]);
 
   const canEditSelectedTx = selectedTx && outing
     ? canUserEditTransaction(selectedTx, currentUserId, outing)
@@ -685,6 +720,10 @@ export default function OutingDetail() {
                 status={outing.status}
                 onChange={handleStatusChange}
               />
+            ) : outing && outing.status === "settled" ? (
+              <Badge variant="secondary" className="px-3 py-1.5 rounded-lg text-xs font-semibold gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Completed
+              </Badge>
             ) : null}
             <div className="flex items-center gap-2 ml-auto">
               {canEditOuting && (
@@ -750,6 +789,22 @@ export default function OutingDetail() {
           </div>
         </div>
       </motion.div>
+
+      {/* The trip is over — how it landed, and what the budget did */}
+      {outing && isComplete && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.03 }}
+          className="w-full"
+        >
+          <OutingCompleteCard
+            outing={outing}
+            totalSpent={totalSpent}
+            myReturns={individualReturns}
+          />
+        </motion.div>
+      )}
 
       {/* Summary cards */}
       <motion.div

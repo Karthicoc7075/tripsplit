@@ -7,7 +7,9 @@ import {
   getMemberBalance,
   computeGlobalSettlements,
   computeFriendBalances,
+  computeDashboardStats,
 } from "../balances";
+import { getFriendOutingSummaries } from "../friends";
 import type { OutingMember, Transaction, SettlementRecord } from "@/types";
 
 describe("balances logic", () => {
@@ -212,7 +214,7 @@ describe("balances logic", () => {
   });
 });
 
-describe("settled outings are excluded from live debts", () => {
+describe("a closed outing counts only while money is still owed", () => {
   const members: OutingMember[] = [
     { id: "me", name: "Karthi" },
     { id: "f1", name: "Arun" },
@@ -248,18 +250,75 @@ describe("settled outings are excluded from live debts", () => {
     },
   ] as Transaction[];
 
-  it("computeGlobalSettlements skips settled outings", () => {
+  /** Arun paying his ₹100 share back squares the outing. */
+  const paidBack = [
+    {
+      id: "s1",
+      outingId: "o1",
+      fromId: "f1",
+      fromName: "Arun",
+      toId: "me",
+      toName: "Karthi",
+      amount: 100,
+      type: "return" as const,
+      createdAt: "2026-08-02T00:00:00.000Z",
+      recordedById: "me",
+      recordedByName: "Karthi",
+    },
+  ];
+
+  it("computeGlobalSettlements keeps a closed outing that is still owed", () => {
     expect(computeGlobalSettlements([outing("o1", "ongoing")], txs, "me")).toHaveLength(1);
-    expect(computeGlobalSettlements([outing("o1", "settled")], txs, "me")).toHaveLength(0);
+    // Marking the trip done moves no money, so the debt is still real.
+    expect(computeGlobalSettlements([outing("o1", "settled")], txs, "me")).toHaveLength(1);
     // Planned outings can hold advance bookings, so they still count.
     expect(computeGlobalSettlements([outing("o1", "planned")], txs, "me")).toHaveLength(1);
   });
 
-  it("computeFriendBalances skips settled outings", () => {
+  it("computeGlobalSettlements drops a closed outing once it is square", () => {
+    expect(
+      computeGlobalSettlements([outing("o1", "settled")], txs, "me", paidBack)
+    ).toHaveLength(0);
+  });
+
+  it("computeFriendBalances keeps a closed outing that is still owed", () => {
     const friends = [{ id: "f1", name: "Arun", email: "a@x.com" }];
     const open = computeFriendBalances(friends, [outing("o1", "ongoing")], txs, "me", "Karthi");
     const closed = computeFriendBalances(friends, [outing("o1", "settled")], txs, "me", "Karthi");
     expect(open.get("f1")).toBe(100);
-    expect(closed.get("f1")).toBe(0);
+    expect(closed.get("f1")).toBe(100);
+  });
+
+  it("computeFriendBalances clears a closed outing that was paid back", () => {
+    const friends = [{ id: "f1", name: "Arun", email: "a@x.com" }];
+    const settled = computeFriendBalances(
+      friends,
+      [outing("o1", "settled")],
+      txs,
+      "me",
+      "Karthi",
+      paidBack
+    );
+    expect(settled.get("f1")).toBe(0);
+  });
+
+  it("computeDashboardStats counts a closed outing that is still owed", () => {
+    const live = computeDashboardStats([outing("o1", "settled")], txs, "me");
+    expect(live.youAreOwed).toBe(100);
+    expect(live.owedCount).toBe(1);
+
+    const square = computeDashboardStats([outing("o1", "settled")], txs, "me", paidBack);
+    expect(square.youAreOwed).toBe(0);
+  });
+
+  it("the friend list and a friend's own page agree on a closed outing", () => {
+    // The bug: Friends read "all settled" while the friend's page still listed
+    // the return, because only the list dropped closed outings.
+    const friends = [{ id: "f1", name: "Arun", email: "a@x.com" }];
+    const closed = outing("o1", "settled");
+    const listBalance = computeFriendBalances(friends, [closed], txs, "me", "Karthi").get("f1");
+    const detail = getFriendOutingSummaries(friends[0], [closed], txs, "me", []);
+
+    expect(listBalance).toBe(detail[0].yourBalance);
   });
 });

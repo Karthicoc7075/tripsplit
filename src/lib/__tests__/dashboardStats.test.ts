@@ -50,19 +50,39 @@ describe("computeDashboardStats — outing status handling", () => {
     expect(stats.totalBalance).toBe(500);
   });
 
-  it("still excludes settled outings", () => {
+  it("keeps a settled outing that is still owed — closing it moved no money", () => {
     const stats = computeDashboardStats([outing("o1", "settled")], [paidByMe("o1")], ME);
+    expect(stats.totalBalance).toBe(500);
+    expect(stats.youAreOwed).toBe(500);
+  });
+
+  it("excludes a settled outing once it has been paid back", () => {
+    const stats = computeDashboardStats([outing("o1", "settled")], [paidByMe("o1")], ME, [
+      {
+        id: "s1",
+        outingId: "o1",
+        fromId: "f1",
+        fromName: "Arun",
+        toId: ME,
+        toName: "Karthi",
+        amount: 500,
+        type: "return",
+        createdAt: "2026-08-02T00:00:00.000Z",
+        recordedById: ME,
+        recordedByName: "Karthi",
+      },
+    ]);
     expect(stats.totalBalance).toBe(0);
     expect(stats.youAreOwed).toBe(0);
   });
 
-  it("sums planned and ongoing together", () => {
+  it("sums every outing still carrying money, whatever its status", () => {
     const stats = computeDashboardStats(
       [outing("o1", "ongoing"), outing("o2", "planned"), outing("o3", "settled")],
       [paidByMe("o1"), paidByMe("o2"), paidByMe("o3")],
       ME
     );
-    expect(stats.totalBalance).toBe(1000);
+    expect(stats.totalBalance).toBe(1500);
   });
 
   it("activeOutings stays ongoing-only — the card says 'Currently ongoing'", () => {
